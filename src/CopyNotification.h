@@ -16,6 +16,10 @@ namespace CopyNotification {
 // Clicking a notification posts kOpenHotkeyMessage to owner.
 void Initialize(HWND owner);
 void Show(const ClipboardSnapshot &capture);
+// Cleared history must not survive in what notifications keep: deletes the
+// image files, drops a notification not yet shown and empties Maccy's
+// entries in Action Center. Safe while the worker is writing or showing.
+void ClearHistory();
 void Shutdown() noexcept;
 
 } // namespace CopyNotification

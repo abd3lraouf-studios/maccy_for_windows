@@ -15,7 +15,9 @@
 #include <winrt/Windows.Foundation.h>
 #include <winrt/Windows.UI.Notifications.h>
 
+#include <atomic>
 #include <condition_variable>
+#include <cstdint>
 #include <cstdlib>
 #include <cwctype>
 #include <filesystem>
@@ -62,6 +64,13 @@ std::mutex g_mutex;
 std::condition_variable_any g_wake;
 // A burst of copies shows only the newest one.
 std::optional<Notice> g_pending;
+// Counts ClearHistory calls. Bumped together with dropping g_pending, so a
+// copy the worker took before a clear is known to belong to the cleared past.
+std::atomic<std::uint64_t> g_clears{0};
+// Held by the worker while it writes a thumbnail or shows a notification,
+// and by ClearHistory while it deletes them: each happens wholly before or
+// after a clear, never across it.
+std::mutex g_clearMutex;
 std::jthread g_thread;
 
 std::filesystem::path DataDirectory() {
@@ -247,9 +256,14 @@ std::wstring FilesSnippet(const std::vector<std::wstring> &files) {
 // by URI. Only the newest two are kept on disk.
 std::filesystem::path Thumbnail(IWICImagingFactory *factory, ClipboardItem item,
                                 const std::filesystem::path &folder,
-                                const std::filesystem::path &previous, std::stop_token stop) {
+                                const std::filesystem::path &previous, std::uint64_t clears,
+                                std::stop_token stop) {
     auto bitmap = DecodePreviewBitmap(item, kImageMaxWidth, kImageMaxHeight, stop);
     if (!bitmap) {
+        return {};
+    }
+    std::lock_guard lock(g_clearMutex);
+    if (g_clears != clears) {
         return {};
     }
     const std::filesystem::path images = folder / L"notification-images";
@@ -329,6 +343,7 @@ void ThreadMain(std::stop_token stop) {
 
         while (notifier && factory) {
             Notice notice;
+            std::uint64_t clears = 0;
             {
                 std::unique_lock lock(g_mutex);
                 if (!g_wake.wait(lock, stop, [] { return g_pending.has_value(); })) {
@@ -336,6 +351,7 @@ void ThreadMain(std::stop_token stop) {
                 }
                 notice = std::move(*g_pending);
                 g_pending.reset();
+                clears = g_clears;
             }
             try {
                 std::vector<std::wstring> files;
@@ -370,15 +386,18 @@ void ThreadMain(std::stop_token stop) {
                     item.has_files = !files.empty();
                     item.file_paths = std::move(files);
                     item.data = std::move(notice.data);
-                    image = Thumbnail(factory, std::move(item), folder, previous_image, stop);
+                    image = Thumbnail(factory, std::move(item), folder, previous_image, clears, stop);
                     if (!image.empty()) {
                         previous_image = image;
                     }
                 }
 
                 ToastNotification toast = BuildToast(title, body, logo, image);
-                notifier.Show(toast);
-                shown = toast;
+                std::lock_guard lock(g_clearMutex);
+                if (g_clears == clears) {
+                    notifier.Show(toast);
+                    shown = toast;
+                }
             } catch (...) {
                 // A notification is best effort; the copy is already in history.
             }
@@ -419,6 +438,26 @@ void Show(const ClipboardSnapshot &capture) {
         g_pending = std::move(notice);
     }
     g_wake.notify_one();
+}
+
+void ClearHistory() {
+    {
+        std::lock_guard lock(g_mutex);
+        g_pending.reset();
+        ++g_clears;
+    }
+    std::lock_guard lock(g_clearMutex);
+    // Images of earlier runs too: the worker only prunes when it writes.
+    if (const std::filesystem::path folder = DataDirectory(); !folder.empty()) {
+        std::error_code error;
+        std::filesystem::remove_all(folder / L"notification-images", error);
+    }
+    // Action Center keeps the last notification, snippet and image included.
+    try {
+        ToastNotificationManager::History().Clear(kAppUserModelId);
+    } catch (...) {
+        // Nothing was shown if notifications never registered.
+    }
 }
 
 void Shutdown() noexcept {

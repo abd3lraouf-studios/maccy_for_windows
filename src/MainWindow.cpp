@@ -1,5 +1,6 @@
 #include "MainWindow.h"
 #include "Constants.h"
+#include "CopyNotification.h"
 #include "GdiScope.h"
 #include "Localization.h"
 #include "PinKeys.h"
@@ -1767,6 +1768,7 @@ void MainWindow::ClearHistory(bool all) {
         );
         return;
     }
+    CopyNotification::ClearHistory();
     if (clear_clipboard && !m_applicationController.ClearClipboard()) {
         ShowRuntimeError(
             m_hWnd,
@@ -1884,6 +1886,7 @@ void MainWindow::ExitApplication(ExitReason reason) {
             m_storage.DeleteUnpinned();
         } catch (...) {
         }
+        CopyNotification::ClearHistory();
     }
     if (reason == ExitReason::User &&
         m_settings.clear_on_quit &&
