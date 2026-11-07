@@ -33,7 +33,14 @@ std::wstring_view BoundedRegexHaystack(std::wstring_view text) {
 
 bool RegexSearchBounded(const std::wregex &expression, std::wstring_view text) {
     const std::wstring_view haystack = BoundedRegexHaystack(text);
-    return std::regex_search(haystack.begin(), haystack.end(), expression);
+    try {
+        return std::regex_search(haystack.begin(), haystack.end(), expression);
+    } catch (const std::regex_error &) {
+        // MSVC throws error_complexity / error_stack at match time for
+        // backtracking-heavy patterns. Treat that as "no match": an ignore rule
+        // must not abort capture (with the clipboard held open) or break search.
+        return false;
+    }
 }
 
 const std::vector<std::wstring> &DefaultIgnoredFormats() {

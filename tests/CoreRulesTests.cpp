@@ -102,6 +102,24 @@ bool CheckRegexBoundAndIgnoreAliases() {
         ClipboardRules::IsClipboardViewerIgnoreFormat(0, L"CF_CLIPBOARD_VIEWER_IGNORE");
 }
 
+bool CheckRegexMatchErrorIsNoMatch() {
+    // Nested repetition over long text exceeds MSVC's match-time stack or
+    // complexity limit; the raw call must throw for this check to mean anything.
+    const std::wregex expression(L"(a|aa)*b");
+    const std::wstring haystack(ClipboardRules::Limits::kMaximumRegexHaystackCharacters / 2, L'a');
+    bool raw_throws = false;
+    try {
+        static_cast<void>(std::regex_search(haystack, expression));
+    } catch (const std::regex_error &) {
+        raw_throws = true;
+    }
+    try {
+        return raw_throws && !ClipboardRules::RegexSearchBounded(expression, haystack);
+    } catch (...) {
+        return false;
+    }
+}
+
 } // namespace
 
 int main() {
@@ -111,5 +129,6 @@ int main() {
     if (!CheckBoundedDecoding()) return 4;
     if (!CheckStripMarkup()) return 5;
     if (!CheckRegexBoundAndIgnoreAliases()) return 6;
+    if (!CheckRegexMatchErrorIsNoMatch()) return 7;
     return 0;
 }
