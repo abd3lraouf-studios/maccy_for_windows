@@ -95,6 +95,7 @@ set(MACCY_SOURCES
         "${MACCY_SOURCE_DIR}/PinKeys.cpp"
         "${MACCY_SOURCE_DIR}/Settings.cpp"
         "${MACCY_SOURCE_DIR}/SettingsWindow.cpp"
+        "${MACCY_SOURCE_DIR}/Theme.cpp"
         "${MACCY_SOURCE_DIR}/PreviewWindow.cpp"
         "${MACCY_SOURCE_DIR}/TrayIcon.cpp"
         "${MACCY_SOURCE_DIR}/UpdateChecker.cpp"
@@ -234,12 +235,13 @@ add_executable(maccy_file_history_tests
         "${MACCY_SOURCE_DIR}/Localization.cpp"
         "${MACCY_SOURCE_DIR}/Localization.rc"
         "${MACCY_SOURCE_DIR}/PreviewDecoder.cpp"
+        "${MACCY_SOURCE_DIR}/Theme.cpp"
 )
 target_include_directories(maccy_file_history_tests PRIVATE
         "${MACCY_GENERATED_DIR}" "${MACCY_SOURCE_DIR}" "${WTL_INCLUDE_DIR}")
 target_compile_definitions(maccy_file_history_tests PRIVATE UNICODE _UNICODE)
 target_link_libraries(maccy_file_history_tests PRIVATE
-        unofficial::sqlite3::sqlite3 user32 gdi32 shell32 windowscodecs ole32)
+        unofficial::sqlite3::sqlite3 user32 gdi32 shell32 windowscodecs ole32 dwmapi uxtheme advapi32)
 if(MSVC)
     target_compile_options(maccy_file_history_tests PRIVATE /utf-8)
 endif()

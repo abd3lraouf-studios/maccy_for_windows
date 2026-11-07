@@ -206,6 +206,11 @@ BEGIN
     IDS_NOTIFY_COPIED_FROM "Copied from {0}"
     IDS_NOTIFY_IMAGE "Image"
     IDS_NOTIFY_MORE_FILES "{0} and {1} more"
+    IDS_A_THEME "Theme:"
+    IDS_A_THEME_MODE "Mode:"
+    IDS_THEME_MODE_SYSTEM "Match Windows"
+    IDS_THEME_MODE_LIGHT "Light"
+    IDS_THEME_MODE_DARK "Dark"
     IDS_IGNORE_WINDOWS_APPLICATION_FILTER "Applications (*.exe)"
     IDS_IGNORE_ALL_FILES_FILTER "All files (*.*)"
 
