@@ -20,7 +20,7 @@ BEGIN
     IDS_TRAY_CLEAR "Clear history"
     IDS_TRAY_PAUSE "Pause"
     IDS_TRAY_EXIT "Exit"
-    IDS_MAIN_ABOUT_BODY "maccy {0}\r\n\r\nA lightweight clipboard history manager for Windows.\r\nAn independent Windows project inspired by Maccy for macOS. It is not an official Windows version of Maccy and is not affiliated with or endorsed by the Maccy project.\r\nThe layout and interaction are modeled on Maccy 2.7.1.\r\nSome visual assets come from the Maccy project and are used under the MIT License.\r\nThe source code is licensed under the MIT License. Third-party components and visual assets are covered by their own licenses.\r\n\r\nBuilt with C++, WTL, and SQLite."
+    IDS_MAIN_ABOUT_BODY "maccy {0}\r\n\r\nA lightweight clipboard history manager for Windows.\r\nAn independent Windows project inspired by Maccy for macOS. It is not an official Windows version of Maccy and is not affiliated with or endorsed by the Maccy project.\r\nThe layout and interaction are modeled on Maccy 2.7.1.\r\nSome visual assets come from the Maccy project and are used under the MIT License.\r\nThe source code is licensed under the MIT License. Third-party components and visual assets are covered by their own licenses.\r\n\r\nThis build comes from github.com/abd3lraouf-studios/maccy_for_windows, a fork of halifox/maccy_for_windows.\r\n\r\nBuilt with C++, WTL, and SQLite."
     IDS_MAIN_ABOUT_TITLE "About maccy"
     IDS_MAIN_NO_PIN_HOTKEY "All pin shortcuts are in use. Unpin an item first."
     IDS_MAIN_CLEAR_HISTORY_TITLE "Clear history"
