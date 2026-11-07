@@ -90,7 +90,7 @@ namespace AppConstants {
     // Settings window
     // ========================================================================
     namespace SettingsUI {
-        constexpr int kPageCount = 6;
+        constexpr int kPageCount = 7;
         constexpr int kIgnorePageCount = 3;
     }
 

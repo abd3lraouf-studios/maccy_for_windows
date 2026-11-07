@@ -26,9 +26,6 @@
 #include "ThemeGallery.h"
 #include "resource.h"
 
-// The Settings tabs, in order; SettingsWindow.cpp pairs each with its title.
-constexpr int kSettingsPageCount = 7;
-
 // Palette painting shared by the Settings window, its pages and its modal
 // dialogs: chain it into each message map. Colours come from Theme::Current()
 // at paint time, so a theme change needs only a repaint. High contrast keeps
@@ -582,7 +579,7 @@ private:
     SettingsChangedCallback m_onChanged;
     UpdateCheckCallback m_onUpdateCheck;
     ThemedTabCtrl m_tabs;
-    std::array<std::unique_ptr<SettingsResourcePageBase>, kSettingsPageCount> m_pages{
+    std::array<std::unique_ptr<SettingsResourcePageBase>, AppConstants::SettingsUI::kPageCount> m_pages{
         std::make_unique<SettingsResourcePage<IDD_PAGE_GENERAL>>(),
         std::make_unique<SettingsResourcePage<IDD_PAGE_STORAGE>>(),
         std::make_unique<SettingsResourcePage<IDD_PAGE_APPEARANCE>>(),

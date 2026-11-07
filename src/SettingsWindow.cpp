@@ -520,7 +520,7 @@ struct PageDefinition {
     UINT title_resource;
 };
 
-constexpr std::array<PageDefinition, kSettingsPageCount> kPageDefinitions = {
+constexpr std::array<PageDefinition, AppConstants::SettingsUI::kPageCount> kPageDefinitions = {
     PageDefinition{IDS_SETTINGS_GENERAL},
     PageDefinition{IDS_SETTINGS_STORAGE},
     PageDefinition{IDS_SETTINGS_APPEARANCE},
@@ -1292,7 +1292,7 @@ void SettingsWindow::ApplyThemeColors() {
 }
 
 void SettingsWindow::SetPage(int page) {
-    m_currentPage = std::clamp(page, 0, kSettingsPageCount - 1);
+    m_currentPage = std::clamp(page, 0, AppConstants::SettingsUI::kPageCount - 1);
     if (m_tabs.m_hWnd != nullptr) {
         m_tabs.SetCurSel(m_currentPage);
     }
