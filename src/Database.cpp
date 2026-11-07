@@ -64,9 +64,12 @@ void BindText16(sqlite3 *db, sqlite3_stmt *statement, int index, std::wstring_vi
     }
 
     const int byte_count = static_cast<int>(text.size() * sizeof(wchar_t));
+    // SQLite binds a null pointer as SQL NULL, and an empty string_view may
+    // carry one; every text column here is NOT NULL, so bind '' instead.
+    const wchar_t *data = text.data() != nullptr ? text.data() : L"";
     CheckSqliteResult(
         db,
-        sqlite3_bind_text16(statement, index, text.data(), byte_count, SQLITE_TRANSIENT),
+        sqlite3_bind_text16(statement, index, data, byte_count, SQLITE_TRANSIENT),
         "Unable to bind SQLite text"
     );
 }
