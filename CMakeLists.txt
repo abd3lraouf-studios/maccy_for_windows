@@ -167,6 +167,8 @@ target_link_libraries(maccy PRIVATE
         ole32
         windowsapp
         version
+        msimg32
+        uxtheme
 )
 
 target_compile_definitions(maccy PRIVATE UNICODE _UNICODE)
