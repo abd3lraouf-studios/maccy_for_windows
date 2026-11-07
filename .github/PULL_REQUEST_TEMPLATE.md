@@ -1,46 +1,46 @@
-## 变更摘要
+## Summary
 
-<!-- 简要说明做了什么。 -->
+<!-- Briefly describe what this change does. -->
 
-## 变更原因
+## Why
 
-<!-- 说明要解决的问题或使用场景。 -->
+<!-- Describe the problem it solves or the use case it supports. -->
 
-## 影响范围
+## Areas affected
 
-- [ ] UI 或交互
-- [ ] 剪贴板监听或写入
-- [ ] 搜索
-- [ ] 数据库或持久化
-- [ ] 线程或生命周期
-- [ ] 构建或安装
-- [ ] 文档
-- [ ] 第三方代码或资源
+- [ ] UI or interaction
+- [ ] Clipboard monitoring or writing
+- [ ] Search
+- [ ] Database or persistence
+- [ ] Threads or lifecycle
+- [ ] Build or installer
+- [ ] Documentation
+- [ ] Third-party code or assets
 
-## 验证方式
+## How it was verified
 
-<!-- 写出实际执行过的构建、测试和手动验证。 -->
+<!-- List the builds, tests, and manual checks you actually ran. -->
 
 ```text
-在这里填写命令和结果。
+Paste the commands and their results here.
 ```
 
-## 截图或录屏
+## Screenshots or recordings
 
-<!-- UI 变更请提供；没有则删除本节。 -->
+<!-- Required for UI changes; delete this section otherwise. -->
 
-## 提交前检查
+## Checklist
 
-- [ ] 我已阅读 CONTRIBUTING.md。
-- [ ] 我已搜索并检查相关 Issue。
-- [ ] 我没有提交密码、令牌、真实剪贴板内容或未脱敏数据库。
-- [ ] 我已完成与变更相关的构建和测试。
-- [ ] 我没有混入无关的格式化、重命名或临时实现。
-- [ ] 我检查了线程、窗口生命周期和错误处理。
-- [ ] 如果涉及第三方内容，我已说明来源和许可证。
-- [ ] 如果涉及持久化或数据库，我已说明兼容性和数据影响。
-- [ ] 如果涉及文档，我已同步更新相关说明。
+- [ ] I have read CONTRIBUTING.md.
+- [ ] I have checked existing pull requests for related work.
+- [ ] I have not included passwords, tokens, real clipboard content, or unredacted databases.
+- [ ] I have run the builds and tests relevant to this change.
+- [ ] I have not mixed in unrelated formatting, renames, or temporary code.
+- [ ] I have reviewed threading, window lifecycle, and error handling.
+- [ ] If third-party content is involved, I have stated its source and license.
+- [ ] If persistence or the database is involved, I have described compatibility and data impact.
+- [ ] If documentation is affected, I have updated it.
 
-## 其他说明
+## Additional notes
 
-<!-- 风险、已知限制或需要维护者特别关注的内容。 -->
+<!-- Risks, known limitations, or anything reviewers should look at closely. -->

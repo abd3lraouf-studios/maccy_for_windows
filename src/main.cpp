@@ -224,8 +224,6 @@ std::filesystem::path GetDatabasePath() {
 } // namespace
 
 int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int) {
-    Localization::Initialize();
-
     SingleInstanceMutex instance_mutex;
     bool already_running = false;
     DWORD instance_error = ERROR_SUCCESS;

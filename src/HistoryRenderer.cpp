@@ -18,6 +18,7 @@
 
 namespace {
 
+// Row geometry in DIPs (96 DPI); scale with SearchHeaderLayout::Scale before use.
 constexpr int kHistoryItemInset = 2;
 constexpr int kHistoryItemLeftPadding = 10;
 constexpr int kHistoryItemRightPadding = 10;
@@ -26,6 +27,7 @@ constexpr int kHistoryFileIconSize = 16;
 constexpr int kHistoryItemSlotGap = 6;
 constexpr int kHistoryShortcutWidth = 74;
 constexpr int kHistoryItemRadius = 4;
+constexpr int kSeparatorInset = 16;
 
 std::wstring ReadWindowText(CWindow window) {
     if (window.m_hWnd == nullptr) {
@@ -80,6 +82,43 @@ std::optional<COLORREF> ParseHexColor(std::wstring_view text) {
     return RGB((value >> 16) & 0xFF, (value >> 8) & 0xFF, value & 0xFF);
 }
 
+bool HighContrastEnabled() {
+    HIGHCONTRASTW contrast{};
+    contrast.cbSize = sizeof(contrast);
+    return ::SystemParametersInfoW(SPI_GETHIGHCONTRAST, sizeof(contrast), &contrast, 0) != FALSE &&
+        (contrast.dwFlags & HCF_HIGHCONTRASTON) != 0;
+}
+
+COLORREF MixColors(COLORREF foreground, COLORREF background, int foreground_percent) {
+    const auto mix = [foreground_percent](int front, int back) {
+        return (front * foreground_percent + back * (100 - foreground_percent) + 50) / 100;
+    };
+    return RGB(mix(GetRValue(foreground), GetRValue(background)),
+               mix(GetGValue(foreground), GetGValue(background)),
+               mix(GetBValue(foreground), GetBValue(background)));
+}
+
+struct MatchColors {
+    COLORREF text;
+    COLORREF background;
+};
+
+// Colours of a search match drawn with HighlightMatch::Color, all taken from
+// the system colours so they follow the user's theme.
+MatchColors MatchHighlightColors(bool selected_row) {
+    // On the selection bar, the inverse of the bar stays visible in every theme.
+    if (selected_row) {
+        return {GetSysColor(COLOR_HIGHLIGHT), GetSysColor(COLOR_HIGHLIGHTTEXT)};
+    }
+    // High contrast themes only guarantee their own colour pairs to be legible.
+    if (HighContrastEnabled()) {
+        return {GetSysColor(COLOR_HIGHLIGHTTEXT), GetSysColor(COLOR_HIGHLIGHT)};
+    }
+    // A light tint of the selection colour marks a match without looking selected.
+    return {GetSysColor(COLOR_WINDOWTEXT),
+            MixColors(GetSysColor(COLOR_HIGHLIGHT), GetSysColor(COLOR_WINDOW), 25)};
+}
+
 } // namespace
 
 HistoryRenderer::HistoryRenderer(AppSettings& settings)
@@ -105,15 +144,32 @@ bool HistoryRenderer::UpdateFonts(UINT dpi) {
     CFont boldFont;
     CFont italicFont;
     CFont underlineFont;
-    normalFont.Attach(UiFont::CreateSegoeUi(dpi, UiFont::kBodyPointSize));
-    smallFont.Attach(UiFont::CreateSegoeUi(dpi, UiFont::kSmallPointSize));
-    boldFont.Attach(UiFont::CreateSegoeUi(dpi, UiFont::kBodyPointSize, FW_BOLD));
-    italicFont.Attach(UiFont::CreateSegoeUi(dpi, UiFont::kBodyPointSize, FW_NORMAL, TRUE));
-    underlineFont.Attach(UiFont::CreateSegoeUi(dpi, UiFont::kBodyPointSize, FW_NORMAL, FALSE, TRUE));
+    normalFont.Attach(UiFont::CreateUiFont(dpi, UiFont::kBodyPointSize));
+    smallFont.Attach(UiFont::CreateUiFont(dpi, UiFont::kSmallPointSize));
+    boldFont.Attach(UiFont::CreateUiFont(dpi, UiFont::kBodyPointSize, FW_BOLD));
+    italicFont.Attach(UiFont::CreateUiFont(dpi, UiFont::kBodyPointSize, FW_NORMAL, TRUE));
+    underlineFont.Attach(UiFont::CreateUiFont(dpi, UiFont::kBodyPointSize, FW_NORMAL, FALSE, TRUE));
     if (normalFont.IsNull() || smallFont.IsNull() || boldFont.IsNull() ||
         italicFont.IsNull() || underlineFont.IsNull()) {
         return false;
     }
+
+    // Windows text scaling can make the body font larger than the DPI-scaled
+    // row and shortcut column, so both are sized from the font as well.
+    CDC measure;
+    if (!measure.CreateCompatibleDC(nullptr)) {
+        return false;
+    }
+    ScopedGdiObjectSelection measure_font(measure.m_hDC, normalFont);
+    TEXTMETRICW metrics{};
+    SIZE shortcut{};
+    // Pins are lower-case letters; "m" is the widest of them.
+    if (!measure.GetTextMetrics(&metrics) ||
+        !measure.GetTextExtent(L"Ctrl+m", -1, &shortcut)) {
+        return false;
+    }
+    m_lineHeight = metrics.tmHeight;
+    m_shortcutTextWidth = shortcut.cx;
 
     m_normalFont.DeleteObject();
     m_smallFont.DeleteObject();
@@ -147,6 +203,8 @@ void HistoryRenderer::Shutdown() {
     m_boldFont.DeleteObject();
     m_italicFont.DeleteObject();
     m_underlineFont.DeleteObject();
+    m_lineHeight = 0;
+    m_shortcutTextWidth = 0;
 
     m_iconCache.clear();
     m_iconLru.clear();
@@ -223,41 +281,49 @@ HistoryRenderer::HistoryItemLayout HistoryRenderer::LayoutHistoryItem(
     bool has_color_swatch,
     UINT dpi
 ) const {
+    const int inset = SearchHeaderLayout::Scale(kHistoryItemInset, dpi);
+    const int left_padding = SearchHeaderLayout::Scale(kHistoryItemLeftPadding, dpi);
+    const int right_padding = SearchHeaderLayout::Scale(kHistoryItemRightPadding, dpi);
+    const int slot = SearchHeaderLayout::Scale(kHistoryItemSlot, dpi);
+    const int gap = SearchHeaderLayout::Scale(kHistoryItemSlotGap, dpi);
+    const int shortcut_width = std::max(SearchHeaderLayout::Scale(kHistoryShortcutWidth, dpi),
+                                        m_shortcutTextWidth);
+
     HistoryItemLayout layout{};
     layout.background = row;
-    layout.background.left += kHistoryItemInset;
-    layout.background.right -= kHistoryItemInset;
+    layout.background.left += inset;
+    layout.background.right -= inset;
     layout.shortcut = row;
-    layout.shortcut.left = std::max(row.left, row.right - kHistoryItemRightPadding - kHistoryShortcutWidth);
-    layout.shortcut.right = row.right - kHistoryItemRightPadding;
-    int x = row.left + kHistoryItemLeftPadding;
-    const int y = row.top + std::max<LONG>(0, ((row.bottom - row.top) - kHistoryItemSlot) / 2);
+    layout.shortcut.left = std::max(row.left, row.right - right_padding - shortcut_width);
+    layout.shortcut.right = row.right - right_padding;
+    int x = row.left + left_padding;
+    const int y = row.top + std::max<LONG>(0, ((row.bottom - row.top) - slot) / 2);
     if (m_settings.show_application_icons && !item.application.empty()) {
-        layout.icon = {x, y, x + kHistoryItemSlot, y + kHistoryItemSlot};
-        x += kHistoryItemSlot + kHistoryItemSlotGap;
+        layout.icon = {x, y, x + slot, y + slot};
+        x += slot + gap;
     }
     if (item.has_image && !item.has_files) {
         if (const auto *thumbnail = ImageThumbnail(item.id); thumbnail != nullptr) {
-            layout.attachment = {x, row.top + std::max<LONG>(0, ((row.bottom - row.top) - thumbnail->height) / 2),
-                                 x + thumbnail->width, row.top + std::max<LONG>(0, ((row.bottom - row.top) - thumbnail->height) / 2) + thumbnail->height};
-            x += thumbnail->width + kHistoryItemSlotGap;
+            const int top = row.top + std::max<LONG>(0, ((row.bottom - row.top) - thumbnail->height) / 2);
+            layout.attachment = {x, top, x + thumbnail->width, top + thumbnail->height};
+            x += thumbnail->width + gap;
         } else {
-            layout.attachment = {x, y, x + kHistoryItemSlot, y + kHistoryItemSlot};
-            x += kHistoryItemSlot + kHistoryItemSlotGap;
+            layout.attachment = {x, y, x + slot, y + slot};
+            x += slot + gap;
         }
     } else if (item.has_files) {
         const int size = SearchHeaderLayout::Scale(kHistoryFileIconSize, dpi);
         const int top = row.top + std::max<LONG>(0, ((row.bottom - row.top) - size) / 2);
         layout.attachment = {x, top, x + size, top + size};
-        x += size + kHistoryItemSlotGap;
+        x += size + gap;
     }
     if (has_color_swatch) {
-        layout.swatch = {x, y, x + kHistoryItemSlot, y + kHistoryItemSlot};
-        x += kHistoryItemSlot + kHistoryItemSlotGap;
+        layout.swatch = {x, y, x + slot, y + slot};
+        x += slot + gap;
     }
     layout.content = row;
     layout.content.left = x;
-    layout.content.right = std::max<LONG>(x, layout.shortcut.left - kHistoryItemSlotGap);
+    layout.content.right = std::max<LONG>(x, layout.shortcut.left - gap);
     return layout;
 }
 
@@ -473,6 +539,7 @@ void HistoryRenderer::DrawTextWithHighlights(HDC dc, RECT rect, sqlite3_int64 it
 
     const int old_bk_mode = SetBkMode(dc, TRANSPARENT);
     const COLORREF old_text = GetTextColor(dc);
+    const MatchColors match_colors = MatchHighlightColors(selected);
     int x = rect.left;
     for (const auto& [start, end] : segments) {
         if (end <= start) {
@@ -493,9 +560,9 @@ void HistoryRenderer::DrawTextWithHighlights(HDC dc, RECT rect, sqlite3_int64 it
             font != nullptr ? font : GetStockObject(DEFAULT_GUI_FONT)
         );
         if (highlighted && m_settings.highlight_match == HighlightMatch::Color) {
-            SetTextColor(dc, RGB(0, 70, 160));
+            SetTextColor(dc, match_colors.text);
             SetBkMode(dc, OPAQUE);
-            SetBkColor(dc, RGB(255, 239, 160));
+            SetBkColor(dc, match_colors.background);
         } else {
             SetTextColor(dc, selected ? GetSysColor(COLOR_HIGHLIGHTTEXT) : old_text);
             SetBkMode(dc, TRANSPARENT);
@@ -627,15 +694,20 @@ void HistoryRenderer::DrawHistoryItem(DRAWITEMSTRUCT* draw,
     if (m_settings.show_hex_color_swatch) {
         swatch_color = ParseHexColor(text);
     }
+    const UINT dpi = UiFont::DpiForWindow(draw->hwndItem);
+    const int radius = SearchHeaderLayout::Scale(kHistoryItemRadius, dpi);
     const HistoryItemLayout layout = LayoutHistoryItem(draw->rcItem, item,
-        swatch_color.has_value(), UiFont::DpiForWindow(draw->hwndItem));
-    ScopedDcState dc_state(draw->hDC);
-    FillRect(draw->hDC, &draw->rcItem, GetSysColorBrush(COLOR_WINDOW));
+        swatch_color.has_value(), dpi);
+    // Compose the row off screen: its fill, selection and text then reach the
+    // list in one copy instead of flashing in stages while it repaints.
+    CMemoryDC canvas(draw->hDC, draw->rcItem);
+    const HDC dc = canvas.m_hDC;
+    FillRect(dc, &draw->rcItem, GetSysColorBrush(COLOR_WINDOW));
     if (selected) {
         {
-            ScopedGdiObjectSelection null_pen(draw->hDC, GetStockObject(NULL_PEN));
+            ScopedGdiObjectSelection null_pen(dc, GetStockObject(NULL_PEN));
             ScopedGdiObjectSelection highlight_brush(
-                draw->hDC,
+                dc,
                 GetSysColorBrush(COLOR_HIGHLIGHT)
             );
             RECT selected_rect = layout.background;
@@ -643,23 +715,23 @@ void HistoryRenderer::DrawHistoryItem(DRAWITEMSTRUCT* draw,
             const bool next_selected = index + 1 < static_cast<int>(items.size()) && index + 1 == activeIndex;
             if (previous_selected) selected_rect.top = draw->rcItem.top;
             if (next_selected) selected_rect.bottom = draw->rcItem.bottom;
-            RoundRect(draw->hDC, selected_rect.left, selected_rect.top, selected_rect.right, selected_rect.bottom,
-                kHistoryItemRadius, kHistoryItemRadius);
+            RoundRect(dc, selected_rect.left, selected_rect.top, selected_rect.right, selected_rect.bottom,
+                radius, radius);
             if (previous_selected || next_selected) {
                 RECT join = selected_rect;
-                join.left += kHistoryItemRadius / 2;
-                join.right -= kHistoryItemRadius / 2;
-                FillRect(draw->hDC, &join, GetSysColorBrush(COLOR_HIGHLIGHT));
+                join.left += radius / 2;
+                join.right -= radius / 2;
+                FillRect(dc, &join, GetSysColorBrush(COLOR_HIGHLIGHT));
             }
         }
     }
     ScopedGdiObjectSelection normal_font_selection(
-        draw->hDC,
+        dc,
         m_normalFont != nullptr ? m_normalFont : GetStockObject(DEFAULT_GUI_FONT)
     );
 
     TEXTMETRICW metrics{};
-    const int text_height = GetTextMetricsW(draw->hDC, &metrics) != FALSE && metrics.tmHeight > 0
+    const int text_height = GetTextMetricsW(dc, &metrics) != FALSE && metrics.tmHeight > 0
         ? metrics.tmHeight
         : 16;
     const int row_height = std::max(1L, draw->rcItem.bottom - draw->rcItem.top);
@@ -670,7 +742,9 @@ void HistoryRenderer::DrawHistoryItem(DRAWITEMSTRUCT* draw,
 
     if (!IsRectEmpty(&layout.icon)) {
         if (const HICON icon = IconForPath(item.application)) {
-            DrawIconEx(draw->hDC, layout.icon.left, layout.icon.top, icon, 16, 16, 0, nullptr, DI_NORMAL);
+            DrawIconEx(dc, layout.icon.left, layout.icon.top, icon,
+                layout.icon.right - layout.icon.left, layout.icon.bottom - layout.icon.top,
+                0, nullptr, DI_NORMAL);
         }
     }
     if (!IsRectEmpty(&layout.attachment)) {
@@ -678,7 +752,7 @@ void HistoryRenderer::DrawHistoryItem(DRAWITEMSTRUCT* draw,
         if (item.has_files) {
             if (!item.file_paths.empty()) {
                 if (const HICON icon = IconForPath(item.file_paths.front())) {
-                    DrawIconEx(draw->hDC, layout.attachment.left, layout.attachment.top,
+                    DrawIconEx(dc, layout.attachment.left, layout.attachment.top,
                         icon, layout.attachment.right - layout.attachment.left,
                         layout.attachment.bottom - layout.attachment.top, 0, nullptr, DI_NORMAL);
                 }
@@ -689,19 +763,23 @@ void HistoryRenderer::DrawHistoryItem(DRAWITEMSTRUCT* draw,
             const int x = layout.attachment.left;
             const int y = draw->rcItem.top + std::max(0, (row_height - height) / 2);
             CDC memory;
-            if (memory.CreateCompatibleDC(draw->hDC)) {
+            if (memory.CreateCompatibleDC(dc)) {
                 ScopedGdiObjectSelection bitmap(memory.m_hDC, thumbnail->second.handle);
                 if (bitmap.IsSelected()) {
-                    ::BitBlt(draw->hDC, x, y, width, height, memory.m_hDC, 0, 0, SRCCOPY);
+                    // Blend over the row (window or selection colour) already painted here.
+                    ::AlphaBlend(dc, x, y, width, height, memory.m_hDC, 0, 0, width, height,
+                                 PreviewBitmap::kBlend);
                 }
             }
         } else {
-            const COLORREF marker = item.has_image ? RGB(90, 105, 120) : RGB(170, 125, 35);
+            // Placeholder frame until the image thumbnail arrives; only image
+            // rows reach this branch. System colours keep it visible in any theme.
             CPen marker_pen;
-            if (marker_pen.CreatePen(PS_SOLID, 1, marker)) {
-                ScopedGdiObjectSelection pen_selection(draw->hDC, marker_pen);
-                ScopedGdiObjectSelection brush_selection(draw->hDC, GetStockObject(NULL_BRUSH));
-                Rectangle(draw->hDC, layout.attachment.left + 1, layout.attachment.top + 2,
+            if (marker_pen.CreatePen(PS_SOLID, 1,
+                    GetSysColor(selected ? COLOR_HIGHLIGHTTEXT : COLOR_GRAYTEXT))) {
+                ScopedGdiObjectSelection pen_selection(dc, marker_pen);
+                ScopedGdiObjectSelection brush_selection(dc, GetStockObject(NULL_BRUSH));
+                Rectangle(dc, layout.attachment.left + 1, layout.attachment.top + 2,
                     layout.attachment.right - 1, layout.attachment.bottom - 2);
             }
         }
@@ -710,24 +788,28 @@ void HistoryRenderer::DrawHistoryItem(DRAWITEMSTRUCT* draw,
     if (!IsRectEmpty(&layout.swatch) && swatch_color.has_value()) {
         CBrush brush;
         if (brush.CreateSolidBrush(*swatch_color)) {
-            FillRect(draw->hDC, &layout.swatch, brush);
+            FillRect(dc, &layout.swatch, brush);
         }
-        FrameRect(draw->hDC, &layout.swatch, GetSysColorBrush(COLOR_GRAYTEXT));
+        FrameRect(dc, &layout.swatch, GetSysColorBrush(COLOR_GRAYTEXT));
     }
 
     std::wstring shortcut;
-    if (item.pinned) shortcut = L"Ctrl+" + item.pin;
-    else if (m_unpinnedShortcutNumbers[static_cast<size_t>(index)] > 0) {
+    // Ctrl+1..9 paste unpinned items, so a pin keyed 1-9 by an older build
+    // has no shortcut until it is given another key.
+    const bool quick_paste_digit = item.pin.size() == 1 && item.pin[0] >= L'1' && item.pin[0] <= L'9';
+    if (item.pinned) {
+        if (!item.pin.empty() && !quick_paste_digit) shortcut = L"Ctrl+" + item.pin;
+    } else if (m_unpinnedShortcutNumbers[static_cast<size_t>(index)] > 0) {
         shortcut = L"Ctrl+" + std::to_wstring(
             m_unpinnedShortcutNumbers[static_cast<size_t>(index)]
         );
     }
     RECT keyRect = layout.shortcut;
-    SetBkMode(draw->hDC, TRANSPARENT);
-    SetTextColor(draw->hDC, GetSysColor(selected ? COLOR_HIGHLIGHTTEXT : COLOR_GRAYTEXT));
-    DrawTextW(draw->hDC, shortcut.c_str(), -1, &keyRect, DT_RIGHT | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
+    SetBkMode(dc, TRANSPARENT);
+    SetTextColor(dc, GetSysColor(selected ? COLOR_HIGHLIGHTTEXT : COLOR_GRAYTEXT));
+    DrawTextW(dc, shortcut.c_str(), -1, &keyRect, DT_RIGHT | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
     text_rect.right = layout.content.right;
-    DrawTextWithHighlights(draw->hDC, text_rect, item.id, text, selected, searchQuery);
+    DrawTextWithHighlights(dc, text_rect, item.id, text, selected, searchQuery);
 }
 
 void HistoryRenderer::DrawMenuButton(DRAWITEMSTRUCT* draw,
@@ -738,33 +820,39 @@ void HistoryRenderer::DrawMenuButton(DRAWITEMSTRUCT* draw,
     });
     const int index = it == footerButtons.end() ? -1 : static_cast<int>(it - footerButtons.begin());
     const bool selected = index >= 0 && index == activeFooter;
-    ScopedDcState dc_state(draw->hDC);
-    FillRect(draw->hDC, &draw->rcItem, GetSysColorBrush(COLOR_WINDOW));
+    const UINT dpi = UiFont::DpiForWindow(draw->hwndItem);
+    const int inset = SearchHeaderLayout::Scale(kHistoryItemInset, dpi);
+    const int radius = SearchHeaderLayout::Scale(kHistoryItemRadius, dpi);
+    const int left_padding = SearchHeaderLayout::Scale(kHistoryItemLeftPadding, dpi);
+    const int right_padding = SearchHeaderLayout::Scale(kHistoryItemRightPadding, dpi);
+    // Off screen for the same reason as the history rows.
+    CMemoryDC canvas(draw->hDC, draw->rcItem);
+    const HDC dc = canvas.m_hDC;
+    FillRect(dc, &draw->rcItem, GetSysColorBrush(COLOR_WINDOW));
     if (selected || (draw->itemState & ODS_SELECTED)) {
-        ScopedGdiObjectSelection null_pen(draw->hDC, GetStockObject(NULL_PEN));
+        ScopedGdiObjectSelection null_pen(dc, GetStockObject(NULL_PEN));
         ScopedGdiObjectSelection background_brush(
-            draw->hDC,
+            dc,
             GetSysColorBrush(selected ? COLOR_HIGHLIGHT : COLOR_BTNFACE)
         );
         RECT selected_rect = draw->rcItem;
-        selected_rect.left += kHistoryItemInset;
-        selected_rect.right -= kHistoryItemInset;
-        RoundRect(draw->hDC, selected_rect.left, selected_rect.top,
-            selected_rect.right, selected_rect.bottom, kHistoryItemRadius, kHistoryItemRadius);
+        selected_rect.left += inset;
+        selected_rect.right -= inset;
+        RoundRect(dc, selected_rect.left, selected_rect.top,
+            selected_rect.right, selected_rect.bottom, radius, radius);
     }
     ScopedGdiObjectSelection normal_font_selection(
-        draw->hDC,
+        dc,
         m_normalFont != nullptr ? m_normalFont : GetStockObject(DEFAULT_GUI_FONT)
     );
-    SetBkMode(draw->hDC, TRANSPARENT);
-    SetTextColor(draw->hDC, GetSysColor(selected ? COLOR_HIGHLIGHTTEXT : COLOR_WINDOWTEXT));
+    SetBkMode(dc, TRANSPARENT);
+    SetTextColor(dc, GetSysColor(selected ? COLOR_HIGHLIGHTTEXT : COLOR_WINDOWTEXT));
     RECT rect = draw->rcItem;
-    rect.left += kHistoryItemLeftPadding;
-    rect.right -= kHistoryItemRightPadding;
+    rect.left += left_padding;
+    rect.right -= right_padding;
     if (draw->CtlID == IDC_HISTORY_PREVIEW) {
         const int width = draw->rcItem.right - draw->rcItem.left;
         const int height = draw->rcItem.bottom - draw->rcItem.top;
-        const UINT dpi = UiFont::DpiForWindow(draw->hwndItem);
         const int iconWidth = std::min(width - MulDiv(6, static_cast<int>(dpi), 96),
                                        MulDiv(18, static_cast<int>(dpi), 96));
         const int iconHeight = std::min(height - MulDiv(6, static_cast<int>(dpi), 96),
@@ -773,12 +861,12 @@ void HistoryRenderer::DrawMenuButton(DRAWITEMSTRUCT* draw,
         const int top = draw->rcItem.top + (height - iconHeight) / 2;
         CPen pen;
         if (pen.CreatePen(PS_SOLID, 1, GetSysColor(selected ? COLOR_HIGHLIGHTTEXT : COLOR_GRAYTEXT))) {
-            ScopedGdiObjectSelection pen_selection(draw->hDC, pen);
-            ScopedGdiObjectSelection brush_selection(draw->hDC, GetStockObject(NULL_BRUSH));
-            Rectangle(draw->hDC, left, top, left + iconWidth, top + iconHeight);
+            ScopedGdiObjectSelection pen_selection(dc, pen);
+            ScopedGdiObjectSelection brush_selection(dc, GetStockObject(NULL_BRUSH));
+            Rectangle(dc, left, top, left + iconWidth, top + iconHeight);
             const int divider = left + iconWidth / 2;
-            MoveToEx(draw->hDC, divider, top, nullptr);
-            LineTo(draw->hDC, divider, top + iconHeight);
+            MoveToEx(dc, divider, top, nullptr);
+            LineTo(dc, divider, top + iconHeight);
         }
         return;
     }
@@ -795,34 +883,46 @@ void HistoryRenderer::DrawMenuButton(DRAWITEMSTRUCT* draw,
         key = keys[index];
         if (*key != L'\0') {
             SIZE key_size{};
-            GetTextExtentPoint32W(draw->hDC, key, static_cast<int>(wcslen(key)), &key_size);
+            GetTextExtentPoint32W(dc, key, static_cast<int>(wcslen(key)), &key_size);
             key_rect = draw->rcItem;
-            key_rect.right -= kHistoryItemRightPadding;
+            key_rect.right -= right_padding;
             key_rect.left = std::max<LONG>(rect.left, key_rect.right - key_size.cx);
-            rect.right = std::max<LONG>(rect.left, key_rect.left - kHistoryItemSlotGap);
+            rect.right = std::max<LONG>(rect.left,
+                key_rect.left - SearchHeaderLayout::Scale(kHistoryItemSlotGap, dpi));
         }
     }
-    DrawTextW(draw->hDC, title.c_str(), -1, &rect,
+    DrawTextW(dc, title.c_str(), -1, &rect,
         DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX | DT_LEFT);
     if (key != nullptr && *key != L'\0') {
-        SetTextColor(draw->hDC, GetSysColor(selected ? COLOR_HIGHLIGHTTEXT : COLOR_GRAYTEXT));
-        DrawTextW(draw->hDC, key, -1, &key_rect,
+        SetTextColor(dc, GetSysColor(selected ? COLOR_HIGHLIGHTTEXT : COLOR_GRAYTEXT));
+        DrawTextW(dc, key, -1, &key_rect,
             DT_RIGHT | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
     }
 }
 
-void HistoryRenderer::OnPaint(HDC dc, const RECT& client,
+void HistoryRenderer::OnPaint(HDC windowDc, const RECT& client,
                              int pinSeparatorY,
                              int footerSeparatorY,
                              const SearchHeaderLayout::Geometry& header,
                              bool showSearchClear) {
-    ScopedDcState dc_state(dc);
+    // Compose the invalid part off screen and copy it once. Painting the
+    // background fill straight to the window flickers during resizes.
+    RECT paint{};
+    if (::GetClipBox(windowDc, &paint) == ERROR) {
+        paint = client;
+    }
+    if (IsRectEmpty(&paint)) {
+        return;
+    }
+    CMemoryDC canvas(windowDc, paint);
+    const HDC dc = canvas.m_hDC;
     FillRect(dc, &client, GetSysColorBrush(COLOR_WINDOW));
     CPen separator;
     if (separator.CreatePen(PS_SOLID, 1, GetSysColor(COLOR_3DLIGHT))) {
         ScopedGdiObjectSelection pen_selection(dc, separator);
+        const int inset = SearchHeaderLayout::Scale(kSeparatorInset, UiFont::DpiForWindow(m_owner));
         for (int y : {pinSeparatorY, footerSeparatorY}) if (y >= 0) {
-            MoveToEx(dc, 16, y, nullptr); LineTo(dc, client.right - 16, y);
+            MoveToEx(dc, inset, y, nullptr); LineTo(dc, client.right - inset, y);
         }
     }
     if (header.showSearch) {

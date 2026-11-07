@@ -64,6 +64,7 @@ public:
         MESSAGE_HANDLER(WM_CTLCOLOREDIT, OnSearchEditColor)
         MESSAGE_HANDLER(WM_DRAWITEM, OnDrawItem)
         MESSAGE_HANDLER(AppConstants::kPopupDismissMessage, OnPopupDismiss)
+        MESSAGE_HANDLER(WM_ACTIVATEAPP, OnActivateApp)
         MESSAGE_HANDLER(AppConstants::kHistoryIconMessage, OnHistoryIcons)
         MESSAGE_HANDLER(WM_CLOSE, OnClose)
         MESSAGE_HANDLER(WM_TIMER, OnTimer)
@@ -78,6 +79,9 @@ public:
         MESSAGE_HANDLER(WM_IME_ENDCOMPOSITION, OnImeEnd)
         MESSAGE_HANDLER(WM_DESTROY, OnDestroy)
         MESSAGE_HANDLER(AppConstants::kTrayIconMessage, OnTrayIcon)
+        MESSAGE_HANDLER(WM_DISPLAYCHANGE, OnDisplayChange)
+        MESSAGE_HANDLER(WM_SETTINGCHANGE, OnSettingChange)
+        MESSAGE_HANDLER(m_taskbarCreatedMessage, OnTaskbarCreated)
         MESSAGE_HANDLER(AppConstants::kUiUpdateMessage, OnUiUpdate)
         MESSAGE_HANDLER(WM_CLIPBOARDUPDATE, OnClipboardUpdate)
         MESSAGE_HANDLER(AppConstants::kPreviewWorkerResultMessage, OnPreviewWorkerResult)
@@ -189,6 +193,7 @@ private:
 
     // Actions
     void ShowMainWindow(PopupPosition popup_position);
+    void RevealPopup();
     void PasteItem(int index);
     void PasteSelectedItem();
     void ToggleSelectedPin();
@@ -208,6 +213,9 @@ private:
     int SelectedHistoryIndex() const;
     bool IsOurWindow(HWND window) const;
     bool GetTrayIconRect(RECT &rect) const;
+    void RememberTrayIconLocation(WPARAM event_anchor);
+    void ForgetTrayIconLocation();
+    POINT TrayMenuPoint(WPARAM event_anchor) const;
     bool IsTrayPoint(POINT screen_point, int dip_pad) const;
     bool IsPointInPopupUi(POINT screen_point) const;
     bool ConsumeDuplicateTrayOpen(WPARAM click_anchor);
@@ -220,7 +228,7 @@ private:
 
     // Tray icon
     void UpdateTrayIcon();
-    void ShowTrayMenu();
+    void ShowTrayMenu(POINT point);
     void RemoveTrayIcon();
 
     // Settings
@@ -253,6 +261,7 @@ private:
     LRESULT OnSearchEditColor(UINT, WPARAM wParam, LPARAM lParam, BOOL& handled);
     LRESULT OnDrawItem(UINT, WPARAM, LPARAM lParam, BOOL& handled);
     LRESULT OnPopupDismiss(UINT, WPARAM, LPARAM, BOOL& handled);
+    LRESULT OnActivateApp(UINT, WPARAM wParam, LPARAM, BOOL& handled);
     LRESULT OnHistoryIcons(UINT, WPARAM, LPARAM, BOOL& handled);
     LRESULT OnClose(UINT, WPARAM, LPARAM, BOOL&);
     LRESULT OnCommand(UINT, WPARAM wParam, LPARAM lParam, BOOL& handled);
@@ -276,6 +285,9 @@ private:
     LRESULT OnImeStart(UINT, WPARAM, LPARAM, BOOL& handled);
     LRESULT OnImeEnd(UINT, WPARAM, LPARAM, BOOL& handled);
     LRESULT OnTrayIcon(UINT, WPARAM wParam, LPARAM lParam, BOOL&);
+    LRESULT OnDisplayChange(UINT, WPARAM, LPARAM, BOOL& handled);
+    LRESULT OnSettingChange(UINT, WPARAM, LPARAM lParam, BOOL& handled);
+    LRESULT OnTaskbarCreated(UINT, WPARAM, LPARAM, BOOL& handled);
     LRESULT OnUiUpdate(UINT, WPARAM, LPARAM, BOOL& handled);
     LRESULT OnClipboardUpdate(UINT, WPARAM, LPARAM, BOOL& handled);
     LRESULT OnPreviewWorkerResult(UINT, WPARAM, LPARAM, BOOL& handled);
@@ -327,12 +339,17 @@ private:
     sqlite3_int64 m_previewItemId = 0;
     bool m_previewSuppressed = false;
     bool m_popupVisible = false;
+    // Open, but hidden until its history query fills the lists.
+    bool m_revealPending = false;
     // Outside click on the tray icon's padding. NIN_SELECT for that same
     // gesture must not reopen the popup the hook just closed.
     DWORD m_outsideDismissTick = 0;
     POINT m_outsideDismissPoint{};
     mutable RECT m_cachedTrayRect{};
     mutable bool m_hasCachedTrayRect = false;
+    // Where the icon was last clicked when that was away from the shell's
+    // rect: a shell replacement (Seelen UI, ...) shows it in its own bar.
+    std::optional<RECT> m_hostedTrayRect;
     // Click-outside hook runs on its own thread so a slow paint cannot stall the cursor.
     HANDLE m_dismissHookThread = nullptr;
     DWORD m_dismissHookThreadId = 0;
@@ -368,6 +385,9 @@ private:
 
     // Tray icon
     TrayIcon m_trayIcon;
+    // Broadcast once a shell's taskbar is up again; the new shell has none
+    // of the icons the old one showed.
+    const UINT m_taskbarCreatedMessage = ::RegisterWindowMessageW(L"TaskbarCreated");
 
     // State flags
     bool m_modalShowing = false;

@@ -8,6 +8,8 @@
 
 namespace UiFont {
 
+// Sizes at the default Windows text size, where the message font is 9 pt.
+// Other sizes keep their ratio to it, so the "Text size" setting scales them too.
 constexpr int kBodyPointSize = 9;
 constexpr int kSmallPointSize = 7;
 
@@ -21,16 +23,27 @@ inline UINT DpiForWindow(HWND window) {
     return USER_DEFAULT_SCREEN_DPI;
 }
 
-inline HFONT CreateSegoeUi(UINT dpi, int pointSize, LONG weight = FW_NORMAL,
+// A variant of the system message font at `dpi`. The message font carries the
+// user's UI typeface and text scaling; at default settings it is Segoe UI 9 pt,
+// so the look is unchanged there.
+inline HFONT CreateUiFont(UINT dpi, int pointSize, LONG weight = FW_NORMAL,
                           BOOL italic = FALSE, BOOL underline = FALSE) {
+    NONCLIENTMETRICSW metrics{};
+    metrics.cbSize = sizeof(metrics);
     LOGFONTW font{};
-    font.lfHeight = -MulDiv(pointSize, static_cast<int>(dpi), 72);
+    if (::SystemParametersInfoForDpi(SPI_GETNONCLIENTMETRICS, sizeof(metrics),
+                                     &metrics, 0, dpi) != FALSE) {
+        font = metrics.lfMessageFont;
+        font.lfHeight = ::MulDiv(font.lfHeight, pointSize, kBodyPointSize);
+    } else {
+        font.lfHeight = -::MulDiv(pointSize, static_cast<int>(dpi), 72);
+        font.lfCharSet = DEFAULT_CHARSET;
+        wcscpy_s(font.lfFaceName, L"Segoe UI");
+    }
     font.lfWeight = weight;
-    font.lfItalic = italic;
-    font.lfUnderline = underline;
-    font.lfCharSet = DEFAULT_CHARSET;
+    font.lfItalic = static_cast<BYTE>(italic);
+    font.lfUnderline = static_cast<BYTE>(underline);
     font.lfQuality = CLEARTYPE_QUALITY;
-    wcscpy_s(font.lfFaceName, L"Segoe UI");
     return ::CreateFontIndirectW(&font);
 }
 

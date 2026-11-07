@@ -248,6 +248,11 @@ AppSettings AppSettings::Load(const Database &database) {
 
 void AppSettings::Save(const Database &database) const {
     auto transaction = database.BeginTransaction();
+    // Compare against the stored flag (falling back to the Run key, as Load
+    // does) before the writes below overwrite it.
+    const auto stored_launch = database.GetSetting(L"general.launchAtLogin");
+    const bool launch_changed =
+        (stored_launch ? *stored_launch == L"1" : IsLaunchAtLogin()) != launch_at_login;
         WriteBool(database, L"general.launchAtLogin", launch_at_login);
         WriteBool(database, L"general.checkForUpdates", check_for_updates);
         WriteBool(database, L"advanced.clearOnQuit", clear_on_quit);
@@ -298,8 +303,13 @@ void AppSettings::Save(const Database &database) const {
         WriteInt(database, L"appearance.windowX", popup_x);
         WriteInt(database, L"appearance.windowY", popup_y);
 
-    // Apply registry before committing DB so a registry failure leaves DB unchanged (M-09).
-    if (!SetLaunchAtLogin(launch_at_login)) {
+    // Every save (window geometry, ignore toggles...) goes through here, so the
+    // Run key is touched only when this setting itself changed: a key that
+    // cannot be written (policy, permissions) must not block unrelated saves.
+    // When it is the change being saved, a failure throws before Commit so the
+    // database keeps matching the real Run key and the caller can revert the
+    // checkbox (M-09). main.cpp re-applies the stored flag at every start.
+    if (launch_changed && !SetLaunchAtLogin(launch_at_login)) {
         throw std::runtime_error("Unable to update launch-at-login setting");
     }
     transaction.Commit();

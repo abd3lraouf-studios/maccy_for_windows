@@ -4,15 +4,17 @@
 
 # Maccy for Windows
 
-一个 Windows 剪贴板历史工具，受 macOS 版 [Maccy](https://github.com/p0deje/Maccy) 启发。
+A clipboard history tool for Windows, inspired by [Maccy](https://github.com/p0deje/Maccy) for macOS.
 
-[![Platform: Windows x64](https://img.shields.io/badge/platform-Windows%20x64-0078D4)](#从源码构建)
-[![Built with C++20](https://img.shields.io/badge/built%20with-C%2B%2B20-00599C)](#从源码构建)
-[![Storage: SQLite](https://img.shields.io/badge/storage-SQLite-003B57)](#数据隐私和删除)
+Forked from [halifox/maccy_for_windows](https://github.com/halifox/maccy_for_windows).
+
+[![Platform: Windows x64](https://img.shields.io/badge/platform-Windows%20x64-0078D4)](#building-from-source)
+[![Built with C++20](https://img.shields.io/badge/built%20with-C%2B%2B20-00599C)](#building-from-source)
+[![Storage: SQLite](https://img.shields.io/badge/storage-SQLite-003B57)](#data-privacy-and-deletion)
 [![License: MIT](https://img.shields.io/badge/license-MIT-lightgrey)](LICENSE)
-[![No telemetry](https://img.shields.io/badge/telemetry-none-brightgreen)](#数据隐私和删除)
+[![No telemetry](https://img.shields.io/badge/telemetry-none-brightgreen)](#data-privacy-and-deletion)
 
-[功能](#功能概览) · [安装](#安装) · [构建](#从源码构建) · [数据与隐私](#数据隐私和删除)
+[Features](#features) · [Installation](#installation) · [Building](#building-from-source) · [Data and privacy](#data-privacy-and-deletion)
 
 </div>
 
@@ -20,119 +22,148 @@
 
 > [!WARNING]
 >
-> **本项目不是 Maccy 官方 Windows 版本，也不隶属于、代表或获得 Maccy 官方项目授权。**
+> **This project is not the official Windows version of Maccy, and it is not affiliated with, endorsed by, or authorized by the official Maccy project.**
 
 > [!CAUTION]
 >
-> **关于杀毒软件误报：** 为实现全局快捷键和跨应用粘贴，本项目使用 `WH_KEYBOARD_LL` 监听低级键盘事件，并可能屏蔽按键后通过 `SendInput` 重放。`WH_KEYBOARD_LL + 屏蔽按键 + SendInput 重放` 正是杀软常见的键盘记录器、自动化工具或木马启发式特征，因此部分杀软可能将 Maccy 报告为木马或高风险程序。该行为本身不代表恶意，但行为模式确实很像。请从 [GitHub Releases](https://github.com/halifox/maccy_for_windows/releases) 下载程序，并核对 GitHub Release 页面中对应安装包的 SHA256。
+> **About antivirus false positives:** to provide a global shortcut and paste across applications, this project uses `WH_KEYBOARD_LL` to listen to low-level keyboard events, and it may block keystrokes and then replay them with `SendInput`. `WH_KEYBOARD_LL + blocked keystrokes + SendInput replay` is exactly the heuristic that antivirus software commonly associates with keyloggers, automation tools, and trojans, so some antivirus products may report Maccy as a trojan or a high-risk program. The behavior itself is not malicious, but the pattern really does look similar. Download the program from [GitHub Releases](https://github.com/abd3lraouf-studios/maccy_for_windows/releases) and check the installer's SHA256 against the one listed on the GitHub Release page.
 
-## 功能概览
+## Features
 
-- 通过 Windows 系统托盘和全局快捷键访问剪贴板历史；
-- 保存文本、图片和文件剪贴板格式；
-- 支持精确、模糊、正则和混合搜索；
-- 精确搜索使用 SQLite FTS5，图片本身不参与文本搜索；
-- 支持固定项目、编辑固定文本、忽略应用程序、剪贴板格式和正则内容；
-- 支持 Windows 剪贴板历史记录标记，避免保存明确标记为不应进入历史的内容；
-- 可手动或在启动时检查 GitHub Releases，只提示新版本，不自动下载或替换程序；
-- 本地 SQLite 存储，不上传剪贴板内容。
+- Access clipboard history from the Windows system tray and a global shortcut;
+- Save text, image, and file clipboard formats;
+- Exact, fuzzy, regex, and mixed search;
+- Exact search uses SQLite FTS5; images themselves are not part of text search;
+- Pin items, edit pinned text, and ignore applications, clipboard formats, and regex content;
+- Honor the Windows clipboard history markers, so content explicitly marked as not belonging in history is not saved;
+- Show a Windows notification for every captured copy, with the source app's icon and name and a short text snippet, or a thumbnail for images;
+- Check GitHub Releases manually or at startup; the app only announces a new version and never downloads or replaces itself;
+- Local SQLite storage; clipboard contents are never uploaded.
 
-## 界面预览
+## Screenshots
 
 <div align="center">
   <img src="screenshot/screenshot_3.png" width="60%" />
   <img src="screenshot/screenshot_5.png" width="60%" />
 </div>
 
-## 与原版 Maccy 的差异
+## Differences from the original Maccy
 
-- Maccy 使用 macOS 菜单栏；本项目使用 Windows 系统托盘和全局快捷键。
-- Maccy 定时检查剪贴板；本项目使用 Windows `WM_CLIPBOARDUPDATE` 事件监听。
-- Maccy 主要搜索生成后的项目标题；本项目还会搜索保存的文本正文和文件路径。
-- Maccy 会尝试使用 OCR 生成图片标题；本项目不进行 OCR，图片仅作为图片项目保存和预览。
-- Maccy 使用 macOS Pasteboard 和 SwiftData；本项目使用 Windows 原生剪贴板格式和 SQLite BLOB。
-- 本项目不包含 Universal Clipboard、iCloud 或 macOS App Intents 等 macOS 集成。
+- Maccy uses the macOS menu bar; this project uses the Windows system tray and a global shortcut.
+- Maccy polls the clipboard on a timer; this project listens for the Windows `WM_CLIPBOARDUPDATE` event.
+- Maccy mainly searches the generated item titles; this project also searches the saved text body and file paths.
+- Maccy tries to generate image titles with OCR; this project does no OCR, and images are only saved and previewed as image items.
+- Maccy uses the macOS Pasteboard and SwiftData; this project uses native Windows clipboard formats and SQLite BLOBs.
+- This project has no macOS integrations such as Universal Clipboard, iCloud, or macOS App Intents.
 
-## 内存测试
+## Memory usage
 
-|    历史记录 | 内容                 |   后台内存占用 |
-|--------:|--------------------|---------:|
-|     0 条 | 全新启动，无历史记录         |  3.07 MB |
-|   200 条 | 每条 55 字节的短文本       |  3.99 MB |
-|   200 条 | 每条 50 KB 的长文本      | 10.84 MB |
-|   200 条 | 每张 800 × 600 像素的图片 | 11.54 MB |
-|   200 条 | 短文本、长文本和图片混合       | 12.04 MB |
-|  1000 条 | 每条 55 字节的短文本       |  8.38 MB |
-|  1000 条 | 每条 50 KB 的长文本      | 36.05 MB |
-|  1000 条 | 每张 800 × 600 像素的图片 | 14.43 MB |
-|  1000 条 | 短文本、长文本和图片混合       | 18.46 MB |
+|  History items | Content                                  | Background memory |
+|---------------:|------------------------------------------|------------------:|
+|              0 | Fresh start, no history                  |           3.07 MB |
+|            200 | Short text, 55 bytes each                |           3.99 MB |
+|            200 | Long text, 50 KB each                    |          10.84 MB |
+|            200 | Images, 800 × 600 pixels each            |          11.54 MB |
+|            200 | Mix of short text, long text, and images |          12.04 MB |
+|           1000 | Short text, 55 bytes each                |           8.38 MB |
+|           1000 | Long text, 50 KB each                    |          36.05 MB |
+|           1000 | Images, 800 × 600 pixels each            |          14.43 MB |
+|           1000 | Mix of short text, long text, and images |          18.46 MB |
 
-## 安装
+## Installation
 
-请从 [GitHub Releases](https://github.com/halifox/maccy_for_windows/releases) 下载带有版本号的 NSIS 安装程序，并核对 GitHub Release 页面中对应安装包的 SHA256。
+Download the versioned NSIS installer from [GitHub Releases](https://github.com/abd3lraouf-studios/maccy_for_windows/releases) and check its SHA256 against the one listed on the GitHub Release page.
 
-NSIS 安装程序仅为当前 Windows 用户安装到 `%LOCALAPPDATA%\Programs\maccy`，无需管理员权限；开始菜单快捷方式和登录启动项也仅属于当前用户。安装完成页可选择启动 Maccy，桌面快捷方式可在安装过程中选择。
+The NSIS installer installs for the current Windows user only, into `%LOCALAPPDATA%\Programs\maccy`, and needs no administrator rights; the Start menu shortcut and the sign-in startup entry also belong to the current user only. The final installer page offers to launch Maccy, and a desktop shortcut can be selected during installation.
 
-升级请使用同一个 NSIS 安装程序：从应用的更新提示打开 GitHub Releases，下载新版安装程序并运行。安装程序会关闭正在运行的 Maccy，在原用户安装目录内替换程序文件，并保留剪贴板历史、设置和登录启动项。旧版全机安装需先由管理员卸载一次，再安装每用户版本。
+To upgrade, use the same NSIS installer: open GitHub Releases from the app's update prompt, download the new installer, and run it. The installer closes the running Maccy, replaces the program files in the existing per-user installation folder, and keeps your clipboard history, settings, and sign-in startup entry. An older per-machine installation must first be uninstalled once by an administrator before the per-user version is installed.
 
-卸载时默认保留 `%LOCALAPPDATA%\maccy` 中的剪贴板历史和设置。若要同时删除历史、固定项目、设置及其他 Maccy 本地数据，请在卸载页勾选删除选项；此操作不可撤销。
+By default, uninstalling keeps the clipboard history and settings in `%LOCALAPPDATA%\maccy`. To also delete the history, pinned items, settings, and other local Maccy data, tick the delete option on the uninstall page; this cannot be undone.
 
-用户可见变化记录见 [`CHANGELOG.md`](CHANGELOG.md)。
+User-visible changes are recorded in [`CHANGELOG.md`](CHANGELOG.md).
 
-## 从源码构建
+## Copy notifications
 
-开发环境要求：
+Every time Maccy captures a copy, it shows a Windows notification with the source app's icon and name and a short snippet of the copied text, or a thumbnail when the copy is an image. Each new copy replaces the previous notification.
 
-- Windows x64；
-- Visual Studio C++ 工具链；
-- CMake 3.25 或更高版本；
-- Ninja；
-- vcpkg；
-- C++20 编译器；
-- NSIS，并确保 `makensis.exe` 在 `PATH` 中。
+Maccy registers itself under **Settings > System > Notifications > Maccy**, where Windows controls whether these notifications are shown and whether they play a sound.
 
-在 Visual Studio x64 Developer PowerShell 的仓库根目录运行下面这一条命令，即可完成 Release 配置、编译，并生成 NSIS 安装程序和 SHA-256 校验文件：
+To build notifications, Maccy caches the most recent image thumbnail and the source apps' icons under `%LOCALAPPDATA%\maccy`, in `notification-images`, `notification-icons`, and `notification-icon.png`. The notification registration is stored under `HKCU\Software\Classes\AppUserModelId\Maccy.ClipboardHistory`; the uninstaller removes it.
+
+## Building from source
+
+Requirements:
+
+- Windows x64;
+- Visual Studio 2022 or 2026 (or their Build Tools) with the C++ desktop development workload and the ATL component (WTL is built on ATL);
+- CMake 3.25 or later;
+- Ninja;
+- vcpkg, with `VCPKG_ROOT` pointing at its root folder (the vcpkg bundled with Visual Studio works);
+- NSIS, with `makensis.exe` on `PATH` (only needed to build the installer).
+
+Dependencies (SQLite with FTS5, Boost.Beast, Boost.JSON, Boost.Locale, OpenSSL, WTL) come from [`vcpkg.json`](vcpkg.json) and are installed by vcpkg on the first configure.
+
+### Installer
+
+From the repository root in a Visual Studio x64 Developer PowerShell, run this single command to configure and compile a Release build, then produce the NSIS installer and its SHA-256 checksum file:
 
 ```powershell
 cmake -DVCPKG_ROOT=C:/dev/vcpkg -P cmake/package-x64.cmake
 ```
 
-`VCPKG_ROOT` 指向 vcpkg 根目录，默认版本从根目录的 `version.txt` 读取。需要临时覆盖时可传入 `-DMACCY_VERSION="X.Y.Z"`。首次运行会通过 `vcpkg.json` 安装依赖；产物和校验文件写入 `build/packages/`。脚本使用 x64 Visual Studio Release 配置，版本号会写入程序和安装包。
+`VCPKG_ROOT` can be passed as shown or taken from the environment. The script must run from a Developer PowerShell (it needs `VSINSTALLDIR`). The version is read from `version.txt` in the repository root by default; pass `-DMACCY_VERSION="X.Y.Z"` to override it temporarily. The script uses the `windows-x64-release` preset (triplet `x64-windows-static-md`), requires the MSVC runtime to be bundled, and writes the installer and `SHA256SUMS.txt` to `build/packages/`. The version number is written into both the program and the installer.
 
-## 数据、隐私和删除
+### Development builds
 
-剪贴板历史包含用户可能不希望长期保存的密码、令牌、私人文本、图片和文件路径。应用默认将数据保存在：
+The [`CMakePresets.json`](CMakePresets.json) presets build with Ninja into `build/<preset>-vcpkg`:
+
+```powershell
+$env:VCPKG_ROOT = 'C:/path/to/vcpkg'
+cmake --preset windows-x64-debug
+cmake --build --preset windows-x64-debug
+ctest --preset windows-x64-debug --output-on-failure
+```
+
+Use `windows-x64-release` for a Release build. See [`CONTRIBUTING.md`](CONTRIBUTING.md) for more details.
+
+## Data, privacy, and deletion
+
+Clipboard history can contain passwords, tokens, private text, images, and file paths that you may not want kept for long. By default the app stores its data in:
 
 ```text
 %LOCALAPPDATA%\maccy\maccy.db
 ```
 
-SQLite 的 `-wal` 和 `-shm` 文件也是数据库的一部分。当前存储未提供应用层加密；拥有当前 Windows 用户数据访问权限的进程可能读取这些内容。请在使用密码管理器、银行信息或其他敏感数据时配置忽略规则，并阅读 [隐私和数据说明](PRIVACY.md)。
+SQLite's `-wal` and `-shm` files are also part of the database. The storage currently has no application-level encryption; any process with access to the current Windows user's data may be able to read it. Configure ignore rules when you use password managers, banking information, or other sensitive data, and read the [privacy and data notes](PRIVACY.md).
 
-应用不包含遥测、剪贴板上传或后台自动下载安装服务。更新检查只请求 GitHub Releases 的公开版本信息；发现新版本后，应用会在用户确认后打开浏览器，不会自动下载或替换程序。
+The app contains no telemetry, no clipboard upload, and no background auto-download or auto-install service. The update check only requests public release information from this fork's GitHub Releases (`abd3lraouf-studios/maccy_for_windows`); when a new version is found, the app opens the browser only after you confirm, and never downloads or replaces the program on its own.
 
-删除历史并不等同于取证意义上的安全擦除。需要彻底清理时，应退出应用后按照 [隐私和数据说明](PRIVACY.md) 删除数据库及其 WAL 文件。
+Copy notifications are shown locally by Windows; their cached thumbnail and app icons stay under `%LOCALAPPDATA%\maccy` (see [Copy notifications](#copy-notifications)).
 
-## 许可证和第三方内容
+Deleting history is not the same as a forensically secure wipe. For a thorough cleanup, exit the app and then delete the database and its WAL files as described in the [privacy and data notes](PRIVACY.md).
 
-除明确标注的第三方文件外，本项目源代码采用 MIT License，见 [`LICENSE`](LICENSE)。
+## License and third-party content
 
-第三方组件和视觉资源遵循各自的许可证，来源和分发说明见 [`THIRD_PARTY_NOTICES/README.md`](THIRD_PARTY_NOTICES/README.md)：
+Except for files explicitly marked as third-party, the project's source code is licensed under the MIT License; see [`LICENSE`](LICENSE).
 
-- Maccy 图标和视觉资源：MIT License，见 [`THIRD_PARTY_NOTICES/Maccy-LICENSE.txt`](THIRD_PARTY_NOTICES/Maccy-LICENSE.txt)；
-- WTL、SQLite、Boost.Beast、Boost.JSON、Boost.Locale、OpenSSL 及其传递依赖：许可证和版权声明见发行包 `licenses/<port>/copyright` 目录，具体文件位置见第三方内容说明。
+Third-party components and visual assets follow their own licenses; see [`THIRD_PARTY_NOTICES/README.md`](THIRD_PARTY_NOTICES/README.md) for their sources and distribution notes:
 
-Maccy 的名称和 Logo 仍属于其相应权利人；本项目的许可证声明不构成商标或品牌授权。
+- Maccy icon and visual assets: MIT License, see [`THIRD_PARTY_NOTICES/Maccy-LICENSE.txt`](THIRD_PARTY_NOTICES/Maccy-LICENSE.txt);
+- WTL, SQLite, Boost.Beast, Boost.JSON, Boost.Locale, OpenSSL, and their transitive dependencies: licenses and copyright notices are in the `licenses/<port>/copyright` folders of the release package; the exact file locations are listed in the third-party notes.
 
-## 参与贡献
+The Maccy name and logo still belong to their respective owners; this project's license does not grant any trademark or brand rights.
 
-欢迎提交问题、改进建议和 Pull Request。提交前请阅读：
+## Contributing
 
-- [贡献指南](CONTRIBUTING.md)；
-- [安全政策](SECURITY.md)。
+Improvement suggestions and pull requests are welcome. Before submitting, please read:
 
-请不要在公开 Issue 中提交安全漏洞、密码、令牌或未脱敏的剪贴板内容。
+- the [contributing guide](CONTRIBUTING.md);
+- the [security policy](SECURITY.md).
 
-## 致谢
+Do not post security vulnerabilities, passwords, tokens, or unredacted clipboard contents anywhere public.
 
-感谢 [Alex Rodionov](https://github.com/p0deje) 和 Maccy 项目为 macOS 提供了优秀的剪贴板工具，也感谢其 MIT 许可证允许社区学习、修改和再利用相关软件与资源。
+## Acknowledgements
+
+Thanks to [Alex Rodionov](https://github.com/p0deje) and the Maccy project for an excellent clipboard tool for macOS, and for the MIT license that lets the community study, modify, and reuse the software and its assets.
+
+Thanks also to [halifox](https://github.com/halifox), the author of [maccy_for_windows](https://github.com/halifox/maccy_for_windows), which this fork is based on.

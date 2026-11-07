@@ -3,6 +3,7 @@
 #include "ClipboardRules.h"
 #include "GdiScope.h"
 #include "Localization.h"
+#include "SearchHeaderLayout.h"
 #include "UiFont.h"
 
 #include <dwmapi.h>
@@ -16,6 +17,8 @@ namespace {
 
 constexpr UINT kFallbackPreviewWidth = 194;
 constexpr UINT kFallbackPreviewHeight = 98;
+// Space between the image and the frame, in DIPs.
+constexpr int kImageMargin = 8;
 
 void ApplySystemRoundedCorners(HWND window) {
     const DWM_WINDOW_CORNER_PREFERENCE preference = DWMWCP_ROUND;
@@ -220,6 +223,13 @@ LRESULT PreviewWindow::OnInitDialog(UINT, WPARAM, LPARAM, BOOL &handled) {
     m_deleteButton.ModifyStyle(WS_TABSTOP, 0);
     m_deleteButton.SetWindowText(Localization::Text(IDS_PREVIEW_DELETE).c_str());
     const UINT dpi = UiFont::DpiForWindow(m_hWnd);
+    m_templateDpi = dpi;
+    const auto controls = Controls();
+    for (size_t index = 0; index < controls.size(); ++index) {
+        RECT &rect = m_templateRects[index];
+        controls[index].GetWindowRect(&rect);
+        ScreenToClient(&rect);
+    }
     UpdateFont(dpi);
     m_text.SetLimitText(ClipboardRules::Limits::kMaximumPreviewTextCharacters);
     m_image.ShowWindow(SW_HIDE);
@@ -228,7 +238,7 @@ LRESULT PreviewWindow::OnInitDialog(UINT, WPARAM, LPARAM, BOOL &handled) {
 }
 
 bool PreviewWindow::UpdateFont(UINT dpi) {
-    HFONT font = UiFont::CreateSegoeUi(dpi, UiFont::kBodyPointSize);
+    HFONT font = UiFont::CreateUiFont(dpi, UiFont::kBodyPointSize);
     if (font == nullptr) {
         return false;
     }
@@ -242,11 +252,40 @@ bool PreviewWindow::UpdateFont(UINT dpi) {
     return true;
 }
 
-LRESULT PreviewWindow::OnDpiChanged(UINT, WPARAM wParam, LPARAM, BOOL &handled) {
+std::array<CWindow, PreviewWindow::kControlCount> PreviewWindow::Controls() const noexcept {
+    return {m_image.m_hWnd, m_text.m_hWnd, m_status.m_hWnd,
+            m_pinButton.m_hWnd, m_deleteButton.m_hWnd};
+}
+
+void PreviewWindow::LayoutControls(UINT dpi) {
+    const auto scale = [this, dpi](LONG value) {
+        return ::MulDiv(value, static_cast<int>(dpi), static_cast<int>(m_templateDpi));
+    };
+    auto controls = Controls();
+    for (size_t index = 0; index < controls.size(); ++index) {
+        const RECT &source = m_templateRects[index];
+        const RECT rect{scale(source.left), scale(source.top),
+                        scale(source.right), scale(source.bottom)};
+        controls[index].SetWindowPos(nullptr, &rect, SWP_NOZORDER | SWP_NOACTIVATE);
+    }
+    // The template width was restored above; fit the status to its text again.
+    std::wstring status(static_cast<size_t>(m_status.GetWindowTextLength()) + 1, L'\0');
+    status.resize(static_cast<size_t>(std::max(
+        0, m_status.GetWindowText(status.data(), static_cast<int>(status.size())))));
+    AutoSizeTextControl(m_status).Resize(status);
+}
+
+LRESULT PreviewWindow::OnDpiChanged(UINT, WPARAM wParam, LPARAM lParam, BOOL &handled) {
+    // Handling the message here also skips the dialog manager's DPI scaling,
+    // so this does all of it: the font, the controls and the window rect.
     handled = TRUE;
-    UpdateFont(HIWORD(wParam));
+    const UINT dpi = HIWORD(wParam);
+    UpdateFont(dpi);
+    LayoutControls(dpi);
+    if (const auto *suggested = reinterpret_cast<const RECT *>(lParam)) {
+        SetWindowPos(nullptr, suggested, SWP_NOZORDER | SWP_NOACTIVATE);
+    }
     InvalidateRect(nullptr, TRUE);
-    UpdateWindow();
     return 0;
 }
 
@@ -282,6 +321,10 @@ LRESULT PreviewWindow::OnDrawItem(UINT, WPARAM, LPARAM lParam, BOOL &handled) {
     ScopedDcState dc_state(draw->hDC);
     ::FillRect(draw->hDC, &draw->rcItem, ::GetSysColorBrush(COLOR_WINDOW));
     if (m_bitmap.IsNull()) {
+        // The owner-draw DC starts with the system font and black text, which
+        // vanishes on a dark high contrast background.
+        ScopedGdiObjectSelection font(draw->hDC, static_cast<HFONT>(m_font));
+        ::SetTextColor(draw->hDC, ::GetSysColor(COLOR_GRAYTEXT));
         ::SetBkMode(draw->hDC, TRANSPARENT);
         ::DrawTextW(
             draw->hDC,
@@ -293,8 +336,9 @@ LRESULT PreviewWindow::OnDrawItem(UINT, WPARAM, LPARAM lParam, BOOL &handled) {
         return 0;
     }
 
-    const int available_width = std::max(1L, draw->rcItem.right - draw->rcItem.left - 16L);
-    const int available_height = std::max(1L, draw->rcItem.bottom - draw->rcItem.top - 16L);
+    const int margins = 2 * SearchHeaderLayout::Scale(kImageMargin, UiFont::DpiForWindow(m_hWnd));
+    const int available_width = std::max(1, static_cast<int>(draw->rcItem.right - draw->rcItem.left) - margins);
+    const int available_height = std::max(1, static_cast<int>(draw->rcItem.bottom - draw->rcItem.top) - margins);
     const double scale = std::min(
         static_cast<double>(available_width) / m_bitmapWidth,
         static_cast<double>(available_height) / m_bitmapHeight
@@ -304,17 +348,26 @@ LRESULT PreviewWindow::OnDrawItem(UINT, WPARAM, LPARAM lParam, BOOL &handled) {
     const int left = draw->rcItem.left + (draw->rcItem.right - draw->rcItem.left - width) / 2;
     const int top = draw->rcItem.top + (draw->rcItem.bottom - draw->rcItem.top - height) / 2;
 
+    // AlphaBlend only point-samples when it stretches, and HALFTONE StretchBlt
+    // ignores alpha. So blend the image over the window colour at its own size
+    // first, then stretch the opaque result with HALFTONE.
+    const RECT image_rect{0, 0, m_bitmapWidth, m_bitmapHeight};
     CDC source;
-    if (!source.CreateCompatibleDC(draw->hDC)) {
+    CDC flattened;
+    CBitmap flattened_bitmap;
+    if (!source.CreateCompatibleDC(draw->hDC) || !flattened.CreateCompatibleDC(draw->hDC) ||
+        !flattened_bitmap.CreateCompatibleBitmap(draw->hDC, m_bitmapWidth, m_bitmapHeight)) {
         return 0;
     }
-    ScopedGdiObjectSelection selected_bitmap(
-        source.m_hDC,
-        static_cast<HBITMAP>(m_bitmap)
-    );
-    if (!selected_bitmap.IsSelected()) {
+    ScopedGdiObjectSelection selected_bitmap(source.m_hDC, static_cast<HBITMAP>(m_bitmap));
+    ScopedGdiObjectSelection selected_flattened(flattened.m_hDC,
+                                                static_cast<HBITMAP>(flattened_bitmap));
+    if (!selected_bitmap.IsSelected() || !selected_flattened.IsSelected()) {
         return 0;
     }
+    flattened.FillRect(&image_rect, COLOR_WINDOW);
+    flattened.AlphaBlend(0, 0, m_bitmapWidth, m_bitmapHeight,
+                         source, 0, 0, m_bitmapWidth, m_bitmapHeight, PreviewBitmap::kBlend);
     ::SetStretchBltMode(draw->hDC, HALFTONE);
     ::SetBrushOrgEx(draw->hDC, 0, 0, nullptr);
     ::StretchBlt(
@@ -323,7 +376,7 @@ LRESULT PreviewWindow::OnDrawItem(UINT, WPARAM, LPARAM lParam, BOOL &handled) {
         top,
         width,
         height,
-        source,
+        flattened,
         0,
         0,
         m_bitmapWidth,

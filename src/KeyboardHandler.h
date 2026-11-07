@@ -11,6 +11,7 @@
 #include <cstdint>
 #include <functional>
 #include <string>
+#include <thread>
 #include <vector>
 
 #include "ClipboardData.h"
@@ -31,6 +32,7 @@ public:
     void Shutdown();
 
     // Low-level keyboard hook for the open-popup chord (not RegisterHotKey).
+    // Install snapshots settings.open_hotkey, so callers reinstall after changing it.
     bool InstallOpenHotkeyHook(UINT hotkeyId);
     void UninstallOpenHotkeyHook(UINT hotkeyId);
     bool IsHotkeyRegistered() const { return m_hotkeyRegistered; }
@@ -90,7 +92,7 @@ public:
     void InvalidateHistoryItem(int index, const std::vector<ClipboardItem>& items,
                               CListBox historyList, CListBox pinsList);
 
-    // Owner actions (std::function — L-18; no void* trampolines).
+    // Owner actions (std::function, L-18; no void* trampolines).
     using PreviewCallback = std::function<void(sqlite3_int64 itemId, bool keyboard)>;
     using PasteCallback = std::function<void(int index)>;
     using SearchCallback = std::function<void()>;
@@ -135,21 +137,10 @@ private:
     std::array<CButton, AppConstants::UI::kFooterButtonCount> m_footerButtons{};
 
     bool m_hotkeyRegistered = false;
-    HHOOK m_keyboardHook = nullptr;
-    bool m_suppressingOpenKey = false;
-    UINT m_suppressingCaptureKey = 0;
-    HWND m_captureTargetWindow = nullptr;
-    UINT m_capturedKey = 0;
-    UINT m_capturedModifiers = 0;
-    bool m_capturedKeyReleased = false;
-    UINT m_pendingWinKey = 0;
-    DWORD m_pendingWinScan = 0;
-    DWORD m_pendingWinFlags = 0;
-    bool m_winKeyPassedThrough = false;
-    bool m_suppressingWinKey = false;
+    // The low-level hook runs on its own thread; see InstallOpenHotkeyHook.
+    std::thread m_hookThread;
+    DWORD m_hookThreadId = 0;
 
-    static LRESULT CALLBACK LowLevelKeyboardProc(int code, WPARAM message, LPARAM data);
-    static KeyboardHandler* s_hookOwner;
     static std::atomic<bool> s_hotkeyCaptureActive;
     bool m_keyboardNavigating = false;
     bool m_imeComposing = false;

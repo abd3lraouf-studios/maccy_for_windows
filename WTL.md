@@ -1,47 +1,47 @@
-## WTL 开发规范
+## WTL Development Guidelines
 
-本项目是 Windows 原生桌面应用，UI 基于 **WTL（Windows Template Library）**。
+This project is a native Windows desktop application whose UI is built on **WTL (Windows Template Library)**.
 
-### 核心原则
+### Core principles
 
-- **优先使用 WTL 简化 Win32 开发。**
-- 能用 WTL 完成的功能，不要直接编写冗长的 Win32 API 封装。
-- 优先使用 WTL 提供的窗口类、消息映射、控件封装、对话框、布局和 GDI 封装。
-- 保持原生 Win32/WTL 架构，不要为了减少代码引入重量级 UI 框架。
-- 不要为了“现代化”而引入 Qt、MFC、wxWidgets、Electron、WebView、ImGui 等框架。
-- WTL 不支持或无法合理简化的功能，才直接使用 Win32 API。
-- 如果直接调用 Win32 API 可以解决底层问题，可以使用，但应避免在业务代码中重复封装已有的 WTL 能力。
+- **Prefer WTL to simplify Win32 development.**
+- If WTL can do it, do not hand-write verbose Win32 API wrappers.
+- Prefer the window classes, message maps, control wrappers, dialogs, layout, and GDI wrappers that WTL provides.
+- Keep the native Win32/WTL architecture; do not bring in a heavyweight UI framework to write less code.
+- Do not bring in Qt, MFC, wxWidgets, Electron, WebView, ImGui, or similar frameworks for the sake of "modernization".
+- Use the Win32 API directly only for things WTL does not support or cannot reasonably simplify.
+- Calling the Win32 API directly is fine when it solves a low-level problem, but avoid re-wrapping capabilities WTL already has in business code.
 
-### 技术选择优先级
+### Order of technology choices
 
-实现 Windows UI 或窗口逻辑时，按照以下顺序选择：
+When implementing Windows UI or window logic, choose in this order:
 
-1. WTL 现有类和工具
+1. Existing WTL classes and utilities
 2. Windows Common Controls
 3. Win32 API
-4. 自定义 Win32 封装
+4. Custom Win32 wrappers
 
-例如：
+For example:
 
 ```text
-窗口            → CWindowImpl / CDialogImpl
-对话框          → CDialogImpl
-消息处理        → BEGIN_MSG_MAP / MESSAGE_HANDLER / COMMAND_HANDLER
-按钮/编辑框等   → WTL 控件类
-窗口居中        → WTL / Win32 简单 API
-字体            → CFont
-画刷            → CBrush
-画笔            → CPen
-设备上下文      → CDC / CClientDC
-字符串          → CString
-窗口句柄        → HWND / CWindow
-定时器          → WTL 消息映射 + Win32 SetTimer
-托盘图标        → WTL 提供的托盘相关能力；若不足再使用 Shell_NotifyIcon
+Window                → CWindowImpl / CDialogImpl
+Dialog                → CDialogImpl
+Message handling      → BEGIN_MSG_MAP / MESSAGE_HANDLER / COMMAND_HANDLER
+Buttons, edits, etc.  → WTL control classes
+Centering a window    → WTL / simple Win32 API
+Font                  → CFont
+Brush                 → CBrush
+Pen                   → CPen
+Device context        → CDC / CClientDC
+String                → CString
+Window handle         → HWND / CWindow
+Timer                 → WTL message map + Win32 SetTimer
+Tray icon             → WTL's tray support; fall back to Shell_NotifyIcon if it is not enough
 ```
 
-### 窗口开发
+### Windows
 
-优先使用 WTL 窗口类：
+Prefer WTL window classes:
 
 ```cpp
 class CMainWindow :
@@ -63,9 +63,9 @@ private:
 };
 ```
 
-不要把窗口过程写成手工 `WndProc`，除非存在明确的技术原因。
+Do not write the window procedure as a hand-written `WndProc` unless there is a clear technical reason.
 
-不推荐：
+Not recommended:
 
 ```cpp
 LRESULT CALLBACK WndProc(
@@ -80,13 +80,13 @@ LRESULT CALLBACK WndProc(
 }
 ```
 
-如果 `CWindowImpl` 可以解决问题，不要退回手写 `WndProc`。
+If `CWindowImpl` can solve the problem, do not fall back to a hand-written `WndProc`.
 
-### 消息处理
+### Message handling
 
-优先使用 WTL 消息映射。
+Prefer WTL message maps.
 
-推荐：
+Recommended:
 
 ```cpp
 BEGIN_MSG_MAP(CMainWindow)
@@ -96,9 +96,9 @@ BEGIN_MSG_MAP(CMainWindow)
 END_MSG_MAP()
 ```
 
-避免在一个大型 `switch (message)` 中处理所有窗口消息。
+Avoid handling every window message in one large `switch (message)`.
 
-消息处理函数保持短小：
+Keep message handlers short:
 
 ```cpp
 LRESULT OnOk(WORD, WORD, HWND, BOOL&)
@@ -109,17 +109,17 @@ LRESULT OnOk(WORD, WORD, HWND, BOOL&)
 }
 ```
 
-复杂业务逻辑放到独立函数或业务类中，不要堆在消息处理函数里。
+Put complex business logic in separate functions or business classes instead of piling it into message handlers.
 
-### 对话框
+### Dialogs
 
-优先使用：
+Prefer:
 
 ```cpp
 CDialogImpl<T>
 ```
 
-以及：
+together with:
 
 ```cpp
 DoModal()
@@ -128,9 +128,9 @@ DestroyWindow()
 EndDialog()
 ```
 
-不要为了一个简单设置窗口自己创建完整的窗口类、注册窗口类和消息循环。
+Do not create a full window class, register it, and run your own message loop just for a simple settings window.
 
-例如：
+For example:
 
 ```cpp
 class CSettingsDialog :
@@ -159,30 +159,30 @@ public:
 };
 ```
 
-### 控件操作
+### Working with controls
 
-优先使用 WTL 控件封装，而不是到处直接调用：
+Prefer WTL control wrappers over calling these directly everywhere:
 
 ```cpp
 GetDlgItem()
 SendMessage()
 ```
 
-例如：
+For example:
 
 ```cpp
 CEdit edit = GetDlgItem(IDC_EDIT_NAME);
 edit.SetWindowText(L"Hello");
 ```
 
-而不是：
+instead of:
 
 ```cpp
 HWND hwnd = GetDlgItem(m_hWnd, IDC_EDIT_NAME);
 SetWindowText(hwnd, L"Hello");
 ```
 
-对于列表、树、Tab、ListView 等 Common Controls，优先使用 WTL 对应封装：
+For lists, trees, tabs, ListView, and other Common Controls, prefer the matching WTL wrappers:
 
 ```cpp
 CListViewCtrl
@@ -194,15 +194,15 @@ CButton
 CStatic
 ```
 
-### 字符串
+### Strings
 
-Windows UI 字符串优先使用：
+For Windows UI strings, prefer:
 
 ```cpp
 CString
 ```
 
-避免在 UI 层混用：
+Avoid mixing these in the UI layer:
 
 ```cpp
 std::wstring
@@ -211,23 +211,23 @@ LPCWSTR
 LPWSTR
 ```
 
-如果业务层已经使用 `std::wstring`，不需要为了 WTL 强行转换整个项目。
+If the business layer already uses `std::wstring`, there is no need to convert the whole project for WTL's sake.
 
-WTL 与 STL 可以共存。
+WTL and the STL can coexist.
 
-原则是：
+The principle is:
 
 ```text
-UI 层       → CString / WTL
-业务层      → STL
-Windows API → HWND / LPCWSTR 等
+UI layer       → CString / WTL
+Business layer → STL
+Windows API    → HWND / LPCWSTR, etc.
 ```
 
-不要为了“统一”而增加没有价值的字符串转换。
+Do not add pointless string conversions for the sake of "consistency".
 
 ### GDI
 
-优先使用 WTL 的 GDI 封装：
+Prefer WTL's GDI wrappers:
 
 ```cpp
 CDC
@@ -239,7 +239,7 @@ CFont
 CBitmap
 ```
 
-例如：
+For example:
 
 ```cpp
 CPaintDC dc(m_hWnd);
@@ -256,38 +256,38 @@ dc.DrawText(
 );
 ```
 
-不要为简单绘制创建一层自己的 GDI Wrapper。
+Do not create your own GDI wrapper layer for simple drawing.
 
-### 布局
+### Layout
 
-优先使用 WTL 的布局能力。
+Prefer WTL's layout support.
 
-对于固定尺寸、简单窗口：
+For simple, fixed-size windows:
 
 ```text
-资源编辑器 / 对话框模板
+Resource editor / dialog template
 ```
 
-优先于运行时手工创建全部控件。
+is preferred over creating every control by hand at runtime.
 
-对于需要动态布局的窗口：
+For windows that need dynamic layout:
 
 ```text
 WTL Layout / AtlCtrlW
 ```
 
-优先于大量：
+is preferred over lots of:
 
 ```cpp
 SetWindowPos(...)
 MoveWindow(...)
 ```
 
-如果必须使用 `SetWindowPos`，集中处理布局，不要让每个控件的事件函数都修改其他控件的位置。
+If you must use `SetWindowPos`, handle layout in one place; do not let every control's event handler move other controls.
 
-### 资源文件
+### Resource files
 
-UI 优先使用 `.rc` 资源：
+Prefer `.rc` resources for UI:
 
 ```text
 IDD_SETTINGS
@@ -297,41 +297,41 @@ IDC_LIST_HISTORY
 IDC_BUTTON_CLEAR
 ```
 
-不要在 C++ 中手工创建大量静态 UI 控件。
+Do not create lots of static UI controls by hand in C++.
 
-优先：
+Prefer:
 
 ```text
-资源模板
+Resource template
     ↓
 WTL Dialog
     ↓
-WTL 控件封装
+WTL control wrappers
 ```
 
-而不是：
+over:
 
 ```text
-C++ 创建窗口
+Create the window in C++
     ↓
 CreateWindowEx
     ↓
-设置字体
+Set the font
     ↓
-设置位置
+Set the position
     ↓
-设置样式
+Set the style
     ↓
-处理消息
+Handle messages
 ```
 
-### Win32 API 使用原则
+### When to use the Win32 API
 
-Win32 API 并不是禁止使用。
+The Win32 API is not forbidden.
 
-当 WTL 没有对应能力，或者直接使用 Win32 API 更简单时，可以直接使用。
+Use it directly when WTL has no equivalent, or when calling the Win32 API directly is simpler.
 
-例如：
+For example:
 
 ```cpp
 RegisterHotKey()
@@ -345,31 +345,31 @@ OpenProcess()
 CreateProcess()
 ```
 
-但不要因为 Win32 API 存在，就绕过 WTL。
+But do not bypass WTL just because a Win32 API exists.
 
-判断标准：
+Decision rule:
 
 ```text
-WTL 可以直接解决？
+Can WTL solve it directly?
     ↓
-是 → 使用 WTL
+Yes → use WTL
     ↓
-否
+No
     ↓
-Win32 API 可以简单解决？
+Can the Win32 API solve it simply?
     ↓
-是 → 使用 Win32 API
+Yes → use the Win32 API
     ↓
-否
+No
     ↓
-再考虑自行封装
+Only then consider a custom wrapper
 ```
 
-### 避免重复封装
+### Avoid redundant wrappers
 
-在添加 Helper、Wrapper、Manager 之前，先检查 WTL 是否已经提供对应能力。
+Before adding a Helper, Wrapper, or Manager, check whether WTL already provides the capability.
 
-例如不要轻易创建：
+For example, do not casually create:
 
 ```cpp
 WindowHelper
@@ -380,9 +380,9 @@ GdiHelper
 MessageHelper
 ```
 
-如果只是把 WTL / Win32 API 再包一层，并没有减少复杂度，则不要创建。
+If it only wraps WTL or the Win32 API in another layer without reducing complexity, do not create it.
 
-优先直接使用：
+Prefer using these directly:
 
 ```cpp
 CWindow
@@ -395,57 +395,57 @@ CBrush
 CListViewCtrl
 ```
 
-### 代码规模原则
+### Code size
 
-优先选择**代码最少、依赖最少、生命周期最清晰**的实现。
+Prefer the implementation with **the least code, the fewest dependencies, and the clearest lifetimes**.
 
-如果两个方案功能相同：
-
-```text
-方案 A：100 行 Win32 样板代码
-方案 B：30 行 WTL
-```
-
-选择 WTL。
-
-如果：
+If two approaches do the same thing:
 
 ```text
-方案 A：20 行 WTL + 复杂模板代码
-方案 B：10 行直接 Win32 API
+Approach A: 100 lines of Win32 boilerplate
+Approach B: 30 lines of WTL
 ```
 
-选择更简单的方案。
+choose WTL.
 
-目标不是“所有代码都必须 WTL”，而是：
-
-> **优先利用 WTL 消除 Win32 样板代码，同时保持原生 Windows 架构。**
-
-### 修改现有代码
-
-修改 UI 时：
-
-1. 先确认当前窗口使用的 WTL 基类。
-2. 检查现有消息映射。
-3. 优先复用现有 WTL 控件。
-4. 优先修改 `.rc` 资源，而不是在 C++ 中重新创建 UI。
-5. 不要因为一个小功能重写整个窗口。
-6. 不要引入新的 UI 框架。
-7. 不要把简单 WTL 代码替换成更复杂的自定义封装。
-
-### Agent 行为要求
-
-在实现 Windows UI 功能前，Agent 应先判断：
+If:
 
 ```text
-这个问题 WTL 是否已经解决？
+Approach A: 20 lines of WTL + complex template code
+Approach B: 10 lines of direct Win32 API
 ```
 
-如果答案是“是”，直接使用 WTL。
+choose the simpler approach.
 
-如果答案是“不确定”，先检查项目现有代码和 WTL API，再决定是否调用底层 Win32 API。
+The goal is not "all code must be WTL", but:
 
-不要默认选择：
+> **Use WTL first to eliminate Win32 boilerplate, while keeping a native Windows architecture.**
+
+### Changing existing code
+
+When changing UI:
+
+1. First confirm which WTL base class the window uses.
+2. Check the existing message map.
+3. Prefer reusing existing WTL controls.
+4. Prefer changing the `.rc` resources over re-creating the UI in C++.
+5. Do not rewrite a whole window for a small feature.
+6. Do not bring in a new UI framework.
+7. Do not replace simple WTL code with a more complex custom wrapper.
+
+### Agent behavior
+
+Before implementing a Windows UI feature, an agent should first ask:
+
+```text
+Has WTL already solved this problem?
+```
+
+If the answer is "yes", use WTL directly.
+
+If the answer is "not sure", check the project's existing code and the WTL API first, then decide whether to call the lower-level Win32 API.
+
+Do not default to:
 
 ```cpp
 CreateWindowEx
@@ -456,24 +456,24 @@ MoveWindow
 WndProc
 ```
 
-这些 API 应作为底层能力使用，而不是 UI 层的默认开发方式。
+These APIs are low-level capabilities, not the default way to build the UI layer.
 
-### 最终目标
+### Final goal
 
-本项目追求：
+This project aims for:
 
 ```text
-原生 Win32 性能
+Native Win32 performance
         +
-WTL 的轻量封装
+WTL's lightweight wrappers
         +
-资源驱动 UI
+Resource-driven UI
         +
-少量 C++ 代码
+Little C++ code
         +
-清晰的消息映射
+Clear message maps
         +
-低依赖
+Few dependencies
 ```
 
-**能用 WTL 一行解决的问题，不要写十行 Win32。**
+**Never write ten lines of Win32 for a problem WTL solves in one.**

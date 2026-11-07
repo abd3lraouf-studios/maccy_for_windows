@@ -39,15 +39,30 @@ void HistoryListControls::Configure(
     RefreshItemHeights();
 }
 
+namespace {
+
+// Space around the text in a row: kHistoryItemHeight minus the 16 px of the
+// default 9 pt font at 96 DPI.
+constexpr int kHistoryRowTextPadding = 6;
+
+} // namespace
+
+int HistoryListControls::TextRowHeightPixels(UINT dpi) const noexcept {
+    // Windows text scaling enlarges the font beyond the DPI-scaled row height.
+    // Grow the row with it so the text is never clipped.
+    const int line_height = m_renderer != nullptr ? m_renderer->LineHeight() : 0;
+    return std::max(SearchHeaderLayout::Scale(AppConstants::UI::kHistoryItemHeight, dpi),
+                    line_height + SearchHeaderLayout::Scale(kHistoryRowTextPadding, dpi));
+}
+
 int HistoryListControls::ItemHeightPixels() const noexcept {
     const HWND list = m_historyList.m_hWnd != nullptr ? m_historyList.m_hWnd : m_pinsList.m_hWnd;
-    const UINT dpi = UiFont::DpiForWindow(list);
-    return SearchHeaderLayout::Scale(AppConstants::UI::kHistoryItemHeight, dpi);
+    return TextRowHeightPixels(UiFont::DpiForWindow(list));
 }
 
 int HistoryListControls::RowHeightPixels(const CListBox &list, int row) const noexcept {
     const UINT dpi = UiFont::DpiForWindow(list.m_hWnd);
-    const int base_height = SearchHeaderLayout::Scale(AppConstants::UI::kHistoryItemHeight, dpi);
+    const int base_height = TextRowHeightPixels(dpi);
     if (row < 0 || m_items == nullptr) {
         return base_height;
     }
@@ -469,6 +484,31 @@ LRESULT HistoryListControls::OnHistoryListTimer(UINT, WPARAM wParam, LPARAM, BOO
         );
     }
     return 0;
+}
+
+LRESULT HistoryListControls::OnHistoryListEraseBackground(
+    UINT,
+    WPARAM wParam,
+    LPARAM,
+    BOOL &handled
+) {
+    // Every row paints its own background, so erasing the whole list first
+    // only flashes the rows blank on each resize or redraw. Fill just the
+    // strip below the last row, which no row covers.
+    handled = TRUE;
+    CListBox &list = CurrentHistoryList();
+    RECT empty{};
+    if (!list.GetClientRect(&empty)) {
+        return 1;
+    }
+    const int count = list.GetCount();
+    for (int row = list.GetTopIndex(); row < count && empty.top < empty.bottom; ++row) {
+        empty.top += std::max(1, list.GetItemHeight(row));
+    }
+    if (empty.top < empty.bottom) {
+        CDCHandle(reinterpret_cast<HDC>(wParam)).FillRect(&empty, COLOR_WINDOW);
+    }
+    return 1;
 }
 
 LRESULT HistoryListControls::OnHistoryListSelectionChanged(

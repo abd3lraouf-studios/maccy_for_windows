@@ -1,6 +1,7 @@
 #include "ApplicationController.h"
 
 #include "Constants.h"
+#include "CopyNotification.h"
 
 #include <exception>
 #include <string>
@@ -40,6 +41,7 @@ void ApplicationController::AttachWindow(HWND window) noexcept {
     m_updateChecker.SetWindow(window);
     m_storage.SetUiWindow(window);
     m_thumbnailWorker.Start(window);
+    CopyNotification::Initialize(window);
 }
 
 bool ApplicationController::InitializeClipboard(
@@ -64,6 +66,7 @@ void ApplicationController::Shutdown() noexcept {
     m_shutdown = true;
 
     StopUpdateChecks();
+    CopyNotification::Shutdown();
     // Drain posted worker callbacks on the UI thread before HWND teardown (L-02 / H-05).
     m_previewWorker.DrainUiCallbacks();
     m_thumbnailWorker.DrainUiCallbacks();
@@ -81,6 +84,7 @@ void ApplicationController::Shutdown() noexcept {
 }
 
 void ApplicationController::SaveCapturedClipboard(ClipboardSnapshot capture) {
+    CopyNotification::Show(capture);
     m_storage.SaveClipboardAsync(
         std::move(capture),
         m_settings.history_size,
@@ -118,7 +122,18 @@ void ApplicationController::HandleClipboardUpdate() {
 
     if (previous_ignore_events != m_settings.ignore_events ||
         previous_ignore_only != m_settings.ignore_only_next_event) {
-        m_storage.SaveSettings(m_settings);
+        // Async like MainWindow::PersistSettings: this runs inside
+        // WM_CLIPBOARDUPDATE, which must neither wait on the storage thread nor
+        // let an exception escape (Enqueue throws once the worker is stopping).
+        // The in-memory toggle already changed, so the UI is refreshed either way.
+        try {
+            m_storage.SaveSettingsAsync(m_settings);
+        } catch (const std::exception &error) {
+            ::OutputDebugStringA(error.what());
+            ::OutputDebugStringA("\n");
+        } catch (...) {
+            ::OutputDebugStringA("Unable to queue the ignore-events settings save\n");
+        }
         if (m_requestUiUpdate) {
             m_requestUiUpdate(AppConstants::UiUpdate::kFooter | AppConstants::UiUpdate::kTray);
         }

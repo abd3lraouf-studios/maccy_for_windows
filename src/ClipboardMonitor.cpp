@@ -11,10 +11,8 @@
 #include <algorithm>
 #include <array>
 #include <cstring>
-#include <iomanip>
 #include <limits>
 #include <regex>
-#include <sstream>
 #include <utility>
 
 #include <shellapi.h>
@@ -200,44 +198,6 @@ std::optional<std::vector<unsigned char>> CaptureBitmapAsDib(HBITMAP bitmap) {
     return result;
 }
 
-class ClipboardFingerprint {
-public:
-    void AddMeta(std::uint64_t format_count, std::uint64_t total_bytes) noexcept {
-        AddBytes(reinterpret_cast<const unsigned char *>(&format_count), sizeof(format_count));
-        AddBytes(reinterpret_cast<const unsigned char *>(&total_bytes), sizeof(total_bytes));
-    }
-
-    void Add(const std::wstring& name, UINT format, const unsigned char* bytes, size_t count) noexcept {
-        AddBytes(reinterpret_cast<const unsigned char*>(name.data()), name.size() * sizeof(wchar_t));
-        AddBytes(reinterpret_cast<const unsigned char*>(&format), sizeof(format));
-        const std::uint64_t size = static_cast<std::uint64_t>(count);
-        AddBytes(reinterpret_cast<const unsigned char *>(&size), sizeof(size));
-        AddBytes(bytes, count);
-    }
-
-    std::wstring Finish() const {
-        // Dual independent FNV-1a streams → 128-bit hex fingerprint (L-08).
-        std::wstringstream stream;
-        stream << std::hex << std::setfill(L'0')
-               << std::setw(16) << m_hash_a
-               << std::setw(16) << m_hash_b;
-        return stream.str();
-    }
-
-private:
-    void AddBytes(const unsigned char* bytes, size_t count) noexcept {
-        for (size_t index = 0; index < count; ++index) {
-            m_hash_a ^= bytes[index];
-            m_hash_a *= 1099511628211ULL;
-            m_hash_b ^= static_cast<std::uint64_t>(bytes[index]) + 0x9e3779b97f4a7c15ULL;
-            m_hash_b *= 1099511628211ULL;
-        }
-    }
-
-    std::uint64_t m_hash_a = 1469598103934665603ULL;
-    std::uint64_t m_hash_b = 0xcbf29ce484222325ULL;
-};
-
 bool IsRedundantBitmapFormat(UINT format, bool has_dib, bool has_dibv5) noexcept {
     return (format == CF_DIB && has_dibv5) ||
         (format == CF_BITMAP && (has_dib || has_dibv5));
@@ -328,10 +288,10 @@ bool ClipboardMonitor::ShouldIgnoreText(std::wstring_view text) const {
 }
 
 std::wstring ClipboardMonitor::GetSourceApplication() {
-    HWND owner = GetClipboardOwner();
-    if (owner == nullptr) {
-        owner = GetOpenClipboardWindow();
-    }
+    // Owner-less writes (OpenClipboard(NULL): clip.exe, PowerShell) have no
+    // source. GetOpenClipboardWindow is no fallback: this runs while Maccy
+    // holds the clipboard open, so it would name Maccy itself.
+    const HWND owner = GetClipboardOwner();
     if (owner == nullptr) {
         return {};
     }
@@ -446,31 +406,6 @@ std::wstring ClipboardMonitor::FilesPreview(HGLOBAL data) {
     return ClipboardRules::StoredPreview(std::move(result));
 }
 
-std::wstring ClipboardMonitor::HashCapture(const std::vector<ClipboardFormatData>& data) {
-    std::vector<const ClipboardFormatData *> ordered;
-    ordered.reserve(data.size());
-    for (const ClipboardFormatData &item : data) {
-        ordered.push_back(&item);
-    }
-    std::sort(ordered.begin(), ordered.end(), [](const ClipboardFormatData *lhs, const ClipboardFormatData *rhs) {
-        if (lhs->format != rhs->format) {
-            return lhs->format < rhs->format;
-        }
-        return lhs->name < rhs->name;
-    });
-
-    ClipboardFingerprint fingerprint;
-    std::uint64_t total_bytes = 0;
-    for (const ClipboardFormatData *item : ordered) {
-        total_bytes += item->bytes.size();
-    }
-    fingerprint.AddMeta(ordered.size(), total_bytes);
-    for (const ClipboardFormatData *item : ordered) {
-        fingerprint.Add(item->name, item->format, item->bytes.data(), item->bytes.size());
-    }
-    return fingerprint.Finish();
-}
-
 std::optional<ClipboardSnapshot> ClipboardMonitor::CaptureClipboard() const {
     if (m_settings.respect_windows_clipboard_history_markers &&
         IsExcludedByWindowsClipboardHistoryMarker()) {
@@ -487,12 +422,23 @@ std::optional<ClipboardSnapshot> ClipboardMonitor::CaptureClipboard() const {
     capture.has_text = false;
     capture.has_image = false;
     capture.has_files = false;
-    std::wstring file_preview;
-    std::vector<ClipboardFormatData> ignore_probe;
+    // Decide from the format list alone first. GetClipboardData makes the source
+    // render delayed formats (Excel: Biff12, SYLK, EMF, ...) on this thread while
+    // the clipboard is held open, so only formats that are kept get fetched, and
+    // nothing is fetched for an update that Clipboard Viewer Ignore skips.
+    struct WantedFormat {
+        UINT format = 0;
+        std::wstring name;
+        bool is_text = false;
+        bool is_image = false;
+        bool is_files = false;
+        bool save = false;
+    };
+    std::vector<WantedFormat> wanted;
     const bool has_dib = IsClipboardFormatAvailable(CF_DIB) != FALSE;
     const bool has_dibv5 = IsClipboardFormatAvailable(CF_DIBV5) != FALSE;
     for (UINT format = 0; (format = EnumClipboardFormats(format)) != 0;) {
-        const std::wstring name = ClipboardRules::FormatName(format);
+        std::wstring name = ClipboardRules::FormatName(format);
         if (ShouldIgnoreFormat(format, name)) {
             // Clipboard Viewer Ignore means "skip this entire update" by convention.
             if (ClipboardRules::IsClipboardViewerIgnoreFormat(format, name)) {
@@ -502,19 +448,29 @@ std::optional<ClipboardSnapshot> ClipboardMonitor::CaptureClipboard() const {
             continue;
         }
 
-        const bool is_text = ClipboardRules::IsTextFormat(format, name);
-        const bool is_image = ClipboardRules::IsImageFormat(format, name);
-        const bool is_files = format == CF_HDROP;
-        const bool enabled = (is_text && m_settings.save_text) ||
-            (is_image && m_settings.save_images) ||
-            (is_files && m_settings.save_files);
+        WantedFormat entry;
+        entry.format = format;
+        entry.is_text = ClipboardRules::IsTextFormat(format, name);
+        entry.is_image = ClipboardRules::IsImageFormat(format, name);
+        entry.is_files = format == CF_HDROP;
+        entry.save = ((entry.is_text && m_settings.save_text) ||
+            (entry.is_image && m_settings.save_images) ||
+            (entry.is_files && m_settings.save_files)) &&
+            !IsRedundantBitmapFormat(format, has_dib, has_dibv5);
+        entry.name = std::move(name);
+        // Text is read even when not saved: the ignore rules and the preview
+        // need it (M-25).
+        if (entry.save || entry.is_text) {
+            wanted.push_back(std::move(entry));
+        }
+    }
 
+    std::wstring file_preview;
+    std::vector<ClipboardFormatData> ignore_probe;
+    for (const WantedFormat &entry : wanted) {
         ClipboardFormatData data;
-        if (format == CF_BITMAP) {
-            if (!enabled || IsRedundantBitmapFormat(format, has_dib, has_dibv5)) {
-                continue;
-            }
-            const auto dib = CaptureBitmapAsDib(static_cast<HBITMAP>(GetClipboardData(format)));
+        if (entry.format == CF_BITMAP) {
+            const auto dib = CaptureBitmapAsDib(static_cast<HBITMAP>(GetClipboardData(entry.format)));
             if (!dib.has_value()) {
                 continue;
             }
@@ -522,7 +478,7 @@ std::optional<ClipboardSnapshot> ClipboardMonitor::CaptureClipboard() const {
             data.format = CF_DIB;
             data.bytes = std::move(*dib);
         } else {
-            const HGLOBAL handle = static_cast<HGLOBAL>(GetClipboardData(format));
+            const HGLOBAL handle = static_cast<HGLOBAL>(GetClipboardData(entry.format));
             if (handle == nullptr) {
                 continue;
             }
@@ -535,31 +491,24 @@ std::optional<ClipboardSnapshot> ClipboardMonitor::CaptureClipboard() const {
             if (source == nullptr) {
                 continue;
             }
-            data.name = name;
-            data.format = format;
+            data.name = entry.name;
+            data.format = entry.format;
             data.bytes.assign(source, source + bytes);
+            if (entry.save && entry.is_files) {
+                file_preview = FilesPreview(handle);
+            }
         }
 
-        // Always probe text-like formats for regex ignore, even when save_text is off (M-25).
-        if (is_text || ClipboardRules::IsRichTextFormat(data) ||
-            ClipboardRules::IsUnicodeTextFormat(data) ||
-            ClipboardRules::IsAnsiTextFormat(data)) {
-            ignore_probe.push_back(data);
-        }
-
-        if (!enabled || IsRedundantBitmapFormat(format, has_dib, has_dibv5)) {
+        if (!entry.save) {
+            ignore_probe.push_back(std::move(data));
             continue;
         }
-        if (is_text) {
+        if (entry.is_text) {
+            ignore_probe.push_back(data);
             capture.has_text = true;
         }
-        if (is_image) {
-            capture.has_image = true;
-        }
-        if (is_files) {
-            capture.has_files = true;
-            file_preview = FilesPreview(static_cast<HGLOBAL>(GetClipboardData(format)));
-        }
+        capture.has_image = capture.has_image || entry.is_image;
+        capture.has_files = capture.has_files || entry.is_files;
         capture.data.push_back(std::move(data));
     }
 
@@ -573,7 +522,7 @@ std::optional<ClipboardSnapshot> ClipboardMonitor::CaptureClipboard() const {
     if (capture.data.empty()) {
         return std::nullopt;
     }
-    capture.fingerprint = HashCapture(capture.data);
+    capture.fingerprint = ClipboardRules::Fingerprint(capture.data);
     capture.preview = !text.empty() ? text : file_preview;
     if (capture.preview.empty() && capture.has_image) {
         capture.preview = Localization::Text(IDS_CONTENT_IMAGE);
@@ -593,33 +542,15 @@ std::optional<ClipboardSnapshot> ClipboardMonitor::CaptureClipboard() const {
 }
 
 void ClipboardMonitor::ReadClipboardAndSave() {
-    const DWORD sequence = ::GetClipboardSequenceNumber();
-    if (m_selfWriteSequence.has_value()) {
-        if (sequence == *m_selfWriteSequence) {
-            // Our own write's clipboard update — drop the echo (H-01 / H-08).
-            m_selfWriteSequence.reset();
-            return;
-        }
-        // Clipboard advanced past our write without an exact match observation.
-        m_selfWriteSequence.reset();
-    }
-
     std::optional<ClipboardSnapshot> capture;
-    bool opened = false;
     for (int attempt = 0; attempt < 10; ++attempt) {
         ClipboardGuard clipboard(m_owner);
         if (!clipboard.IsOpen()) {
             ::Sleep(10);
             continue;
         }
-        opened = true;
         capture = CaptureClipboard();
         break;
-    }
-    // Keep going only when open succeeded; leave self-write state alone on busy
-    // open failures so a later update can still suppress an echo (H-02).
-    if (!opened) {
-        return;
     }
     if (!capture.has_value()) {
         return;
@@ -635,9 +566,15 @@ bool ClipboardMonitor::WriteClipboardItem(const ClipboardItem &item, bool remove
         return false;
     }
 
-    const bool has_plain_text = std::any_of(
-        item.data.begin(),
-        item.data.end(),
+    std::optional<std::vector<ClipboardFormatData>> plain_formats;
+    if (remove_formatting) {
+        plain_formats = ClipboardRules::PlainPasteFormats(item.data);
+    }
+    const std::vector<ClipboardFormatData> &formats =
+        plain_formats.has_value() ? *plain_formats : item.data;
+    const bool has_source_text = std::any_of(
+        formats.begin(),
+        formats.end(),
         [](const ClipboardFormatData& data) {
             return ClipboardRules::IsTextFormat(data.format, data.name);
         }
@@ -649,13 +586,8 @@ bool ClipboardMonitor::WriteClipboardItem(const ClipboardItem &item, bool remove
 
     std::vector<PendingFormat> pending;
     bool has_text = false;
-    for (const ClipboardFormatData& data : item.data) {
+    for (const ClipboardFormatData& data : formats) {
         const bool is_text = ClipboardRules::IsTextFormat(data.format, data.name);
-        const bool is_files = ClipboardRules::IsFilesFormat(data);
-        if (remove_formatting && has_plain_text && !is_text && !is_files) {
-            continue;
-        }
-
         UINT format = data.format;
         if (format >= 0xC000 || format == 0) {
             format = RegisterClipboardFormatW(data.name.c_str());
@@ -680,7 +612,8 @@ bool ClipboardMonitor::WriteClipboardItem(const ClipboardItem &item, bool remove
         has_text = has_text || is_text;
     }
 
-    if (pending.empty() || (has_plain_text && !has_text)) {
+    // Text that could not be staged would paste the wrong content; refuse instead.
+    if (pending.empty() || (has_source_text && !has_text)) {
         return false;
     }
 
@@ -711,6 +644,18 @@ bool ClipboardMonitor::ClearClipboard() {
 }
 
 void ClipboardMonitor::OnClipboardUpdate() {
+    // Recognise our own write before any skip rule: Maccy's paste must not use
+    // up "ignore next copy", which is meant for the user's next real copy.
+    if (m_selfWriteSequence.has_value()) {
+        const bool is_own_write = ::GetClipboardSequenceNumber() == *m_selfWriteSequence;
+        // Either way the marker is spent: a later sequence means the clipboard
+        // already moved past our write.
+        m_selfWriteSequence.reset();
+        if (is_own_write) {
+            // Drop the echo of our own SetClipboardData (H-01 / H-08).
+            return;
+        }
+    }
     // One-shot skip is independent of continuous pause (ignore_events).
     if (m_settings.ignore_only_next_event) {
         m_settings.ignore_only_next_event = false;

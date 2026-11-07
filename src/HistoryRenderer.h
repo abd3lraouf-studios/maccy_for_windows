@@ -57,7 +57,7 @@ public:
     void DrawMenuButton(DRAWITEMSTRUCT* draw,
                         int activeFooter,
                         const std::array<CButton, AppConstants::UI::kFooterButtonCount>& footerButtons);
-    void OnPaint(HDC dc, const RECT& client,
+    void OnPaint(HDC windowDc, const RECT& client,
                  int pinSeparatorY,
                  int footerSeparatorY,
                  const SearchHeaderLayout::Geometry& header,
@@ -67,6 +67,8 @@ public:
     HFONT GetNormalFont() const { return m_normalFont; }
     HFONT GetSmallFont() const { return m_smallFont; }
     HFONT GetBoldFont() const { return m_boldFont; }
+    // Text height of the body font, in pixels at the DPI of the last UpdateFonts.
+    int LineHeight() const noexcept { return m_lineHeight; }
 
     // Text utilities
     std::wstring DisplayText(const ClipboardItem& item) const;
@@ -129,6 +131,8 @@ private:
     CFont m_boldFont;
     CFont m_italicFont;
     CFont m_underlineFont;
+    int m_lineHeight = 0;
+    int m_shortcutTextWidth = 0;
 
     std::unordered_map<std::wstring, IconCacheEntry> m_iconCache;
     std::list<std::wstring> m_iconLru;

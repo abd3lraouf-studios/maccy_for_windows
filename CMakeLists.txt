@@ -19,7 +19,7 @@ if(NOT WIN32)
 endif()
 
 find_package(unofficial-sqlite3 CONFIG REQUIRED)
-find_package(Boost CONFIG REQUIRED COMPONENTS json locale system)
+find_package(Boost CONFIG REQUIRED COMPONENTS json system)
 find_package(OpenSSL REQUIRED)
 find_path(WTL_INCLUDE_DIR NAMES atlapp.h REQUIRED)
 
@@ -83,6 +83,7 @@ set(MACCY_SOURCES
         "${MACCY_SOURCE_DIR}/HistoryListControls.cpp"
         "${MACCY_SOURCE_DIR}/ClipboardMonitor.cpp"
         "${MACCY_SOURCE_DIR}/ClipboardRules.cpp"
+        "${MACCY_SOURCE_DIR}/CopyNotification.cpp"
         "${MACCY_SOURCE_DIR}/PasteController.cpp"
         "${MACCY_SOURCE_DIR}/PreviewDecoder.cpp"
         "${MACCY_SOURCE_DIR}/PreviewWorker.cpp"
@@ -147,7 +148,6 @@ target_include_directories(maccy PRIVATE
 target_link_libraries(maccy PRIVATE
         unofficial::sqlite3::sqlite3
         Boost::json
-        Boost::locale
         Boost::system
         OpenSSL::SSL
         OpenSSL::Crypto
@@ -164,6 +164,10 @@ target_link_libraries(maccy PRIVATE
         ws2_32
         windowscodecs
         ole32
+        windowsapp
+        version
+        msimg32
+        uxtheme
 )
 
 target_compile_definitions(maccy PRIVATE UNICODE _UNICODE)
@@ -191,7 +195,6 @@ target_include_directories(maccy_update_checker_tests PRIVATE
 target_compile_definitions(maccy_update_checker_tests PRIVATE UNICODE _UNICODE)
 target_link_libraries(maccy_update_checker_tests PRIVATE
         Boost::json
-        Boost::locale
         Boost::system
         OpenSSL::SSL
         OpenSSL::Crypto
@@ -236,7 +239,7 @@ target_include_directories(maccy_file_history_tests PRIVATE
         "${MACCY_GENERATED_DIR}" "${MACCY_SOURCE_DIR}" "${WTL_INCLUDE_DIR}")
 target_compile_definitions(maccy_file_history_tests PRIVATE UNICODE _UNICODE)
 target_link_libraries(maccy_file_history_tests PRIVATE
-        unofficial::sqlite3::sqlite3 Boost::locale user32 gdi32 shell32 windowscodecs ole32)
+        unofficial::sqlite3::sqlite3 user32 gdi32 shell32 windowscodecs ole32)
 if(MSVC)
     target_compile_options(maccy_file_history_tests PRIVATE /utf-8)
 endif()
@@ -266,7 +269,7 @@ install(FILES
 )
 
 set(MACCY_VCPKG_SHARE_DIR "${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/share")
-foreach(MACCY_VCPKG_LICENSE_PORT IN ITEMS boost-beast boost-json boost-locale boost-system openssl sqlite3 wtl)
+foreach(MACCY_VCPKG_LICENSE_PORT IN ITEMS boost-beast boost-json boost-system openssl sqlite3 wtl)
     install(FILES "${MACCY_VCPKG_SHARE_DIR}/${MACCY_VCPKG_LICENSE_PORT}/copyright"
             DESTINATION "licenses/${MACCY_VCPKG_LICENSE_PORT}")
 endforeach()
@@ -307,7 +310,12 @@ if(MSVC)
         get_filename_component(MACCY_MSVC_RUNTIME_VERSION_DIR "${MACCY_MSVC_RUNTIME_ARCH_DIR}" DIRECTORY)
         get_filename_component(MACCY_MSVC_RUNTIME_VERSION "${MACCY_MSVC_RUNTIME_VERSION_DIR}" NAME)
         get_filename_component(MACCY_MSVC_TOOLSET_VERSION "${MACCY_MSVC_TOOLSET_DIR}" NAME)
-        if(MACCY_MSVC_RUNTIME_VERSION VERSION_LESS MACCY_MSVC_TOOLSET_VERSION)
+        # One Visual Studio release names its Redist and Tools folders with
+        # different build numbers (VS 17.14: Redist 14.44.35112 holds the
+        # 14.44.35211 DLLs, Tools is 14.44.35207), so compare major.minor only.
+        string(REGEX MATCH "^[0-9]+\\.[0-9]+" MACCY_MSVC_RUNTIME_RELEASE "${MACCY_MSVC_RUNTIME_VERSION}")
+        string(REGEX MATCH "^[0-9]+\\.[0-9]+" MACCY_MSVC_TOOLSET_RELEASE "${MACCY_MSVC_TOOLSET_VERSION}")
+        if(MACCY_MSVC_RUNTIME_RELEASE VERSION_LESS MACCY_MSVC_TOOLSET_RELEASE)
             message(FATAL_ERROR
                 "Selected MSVC runtime ${MACCY_MSVC_RUNTIME_VERSION} is older than compiler toolset ${MACCY_MSVC_TOOLSET_VERSION}.")
         endif()
@@ -331,7 +339,7 @@ endif()
 set(CPACK_PACKAGE_NAME "${PROJECT_NAME}")
 set(CPACK_PACKAGE_VENDOR "maccy")
 set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "${PROJECT_NAME} system tray application")
-set(CPACK_PACKAGE_CONTACT "https://github.com/halifox/maccy_for_windows")
+set(CPACK_PACKAGE_CONTACT "https://github.com/abd3lraouf-studios/maccy_for_windows")
 set(CPACK_PACKAGE_VERSION "${PROJECT_VERSION}")
 set(CPACK_RESOURCE_FILE_LICENSE "${MACCY_PROJECT_LICENSE}")
 set(CPACK_RESOURCE_FILE_README "${MACCY_PROJECT_README}")
@@ -350,8 +358,9 @@ set(CPACK_NSIS_EXECUTABLES_DIRECTORY "${CMAKE_INSTALL_BINDIR}")
 set(CPACK_NSIS_INSTALLED_ICON_NAME "${CMAKE_INSTALL_BINDIR}/maccy.exe")
 set(CPACK_NSIS_MUI_ICON "${MACCY_APP_ICON_ICO}")
 set(CPACK_NSIS_MUI_UNIICON "${MACCY_APP_ICON_ICO}")
-set(CPACK_NSIS_URL_INFO_ABOUT "https://github.com/halifox/maccy_for_windows")
-set(CPACK_NSIS_HELP_LINK "https://github.com/halifox/maccy_for_windows/issues")
+set(CPACK_NSIS_URL_INFO_ABOUT "https://github.com/abd3lraouf-studios/maccy_for_windows")
+# Issues are disabled on the fork, so help points at the repository itself.
+set(CPACK_NSIS_HELP_LINK "https://github.com/abd3lraouf-studios/maccy_for_windows")
 set(CPACK_NSIS_ENABLE_UNINSTALL_BEFORE_INSTALL OFF)
 set(CPACK_NSIS_MODIFY_PATH OFF)
 set(CPACK_NSIS_MUI_FINISHPAGE_RUN "maccy.exe")
@@ -362,10 +371,11 @@ set(CPACK_NSIS_INSTALL_ROOT "$LOCALAPPDATA\\\\Programs")
 set(CPACK_NSIS_EXTRA_PREINSTALL_COMMANDS
     "Call MaccyStopRunningApp\nStrCmp \\\"$MACCY_UPGRADE_FOUND\\\" \\\"1\\\" 0 maccy_preinstall_done\nClearErrors\nRMDir /r \\\"$INSTDIR\\\\bin\\\"\nmaccy_preinstall_done:")
 
-# Full uninstall always removes this user's logon entry. User data is deleted only
+# Full uninstall always removes this user's logon entry and the notification
+# AppUserModelID that CopyNotification.cpp registers. User data is deleted only
 # when the uninstaller page's checkbox is selected.
 set(CPACK_NSIS_EXTRA_UNINSTALL_COMMANDS
-    "Call un.MaccyStopRunningApp\nDeleteRegValue HKCU \\\"Software\\\\Microsoft\\\\Windows\\\\CurrentVersion\\\\Run\\\" \\\"maccy\\\"\nStrCmp \\\"$MACCY_DELETE_USER_DATA\\\" \\\"1\\\" 0 maccy_uninstall_done\nClearErrors\nRMDir /r \\\"$LOCALAPPDATA\\\\maccy\\\"\nIfFileExists \\\"$LOCALAPPDATA\\\\maccy\\\\*.*\\\" 0 maccy_uninstall_done\nmaccy_data_delete_failed:\nMessageBox MB_OK|MB_ICONEXCLAMATION \\\"$(MACCY_UNINSTALL_DATA_DELETE_FAILED)\\\"\nmaccy_uninstall_done:")
+    "Call un.MaccyStopRunningApp\nDeleteRegValue HKCU \\\"Software\\\\Microsoft\\\\Windows\\\\CurrentVersion\\\\Run\\\" \\\"maccy\\\"\nDeleteRegKey HKCU \\\"Software\\\\Classes\\\\AppUserModelId\\\\Maccy.ClipboardHistory\\\"\nStrCmp \\\"$MACCY_DELETE_USER_DATA\\\" \\\"1\\\" 0 maccy_uninstall_done\nClearErrors\nRMDir /r \\\"$LOCALAPPDATA\\\\maccy\\\"\nIfFileExists \\\"$LOCALAPPDATA\\\\maccy\\\\*.*\\\" 0 maccy_uninstall_done\nmaccy_data_delete_failed:\nMessageBox MB_OK|MB_ICONEXCLAMATION \\\"$(MACCY_UNINSTALL_DATA_DELETE_FAILED)\\\"\nmaccy_uninstall_done:")
 
 # Create Start Menu and desktop shortcuts that use the icon embedded in maccy.exe.
 set(CPACK_PACKAGE_EXECUTABLES "${PROJECT_NAME};${PROJECT_NAME}")

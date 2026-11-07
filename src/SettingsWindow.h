@@ -18,6 +18,7 @@
 #include <atlddx.h>
 #include <atlgdi.h>
 #include <atlwin.h>
+#include <uxtheme.h>
 
 #include "Settings.h"
 #include "ClipboardData.h"
@@ -161,7 +162,7 @@ private:
 class SettingsResourcePageBase {
 public:
     virtual ~SettingsResourcePageBase() = default;
-    virtual HWND CreatePage(HWND parent, CMessageMap &owner) = 0;
+    virtual HWND CreatePage(HWND tabs, CMessageMap &owner) = 0;
     virtual HWND Handle() const noexcept = 0;
     virtual void LoadSettings(AppSettings &settings) = 0;
     virtual BOOL ExchangeSettings(BOOL saveAndValidate) = 0;
@@ -193,9 +194,20 @@ public:
     using WTL::CWinDataExchange<SettingsResourcePage<ResourceId>>::DDX_Check;
     using WTL::CWinDataExchange<SettingsResourcePage<ResourceId>>::DDX_Index;
 
-    HWND CreatePage(HWND parent, CMessageMap &owner) override {
+    // A page is a sibling of its tab control, as in a property sheet, not a
+    // child of it: the dialog manager only walks into WS_EX_CONTROLPARENT
+    // windows for Tab navigation, and a tab control with that style stops
+    // being a tab stop itself.
+    HWND CreatePage(HWND tabs, CMessageMap &owner) override {
         m_ownerMessageMap = &owner;
-        return CDialogImpl<SettingsResourcePage<ResourceId>>::Create(parent);
+        m_tabs = tabs;
+        if (CDialogImpl<SettingsResourcePage<ResourceId>>::Create(m_tabs.GetParent()) == nullptr) {
+            return nullptr;
+        }
+        // Above the tab control in Z order, so the page is drawn over the tab
+        // body and Tab reaches its controls before the tab strip.
+        this->SetWindowPos(HWND_TOP, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+        return this->m_hWnd;
     }
 
     HWND Handle() const noexcept override { return this->m_hWnd; }
@@ -317,9 +329,8 @@ public:
 
 private:
     LRESULT OnBlankClick(UINT, WPARAM, LPARAM, BOOL &handled) {
-        const HWND tabs = ::GetParent(this->m_hWnd);
-        if (tabs != nullptr) {
-            ::SetFocus(tabs);
+        if (m_tabs.m_hWnd != nullptr) {
+            m_tabs.SetFocus();
         }
         handled = TRUE;
         return 0;
@@ -330,17 +341,23 @@ private:
         const int controlId = edit != nullptr ? GetDlgCtrlID(edit) : 0;
         if (controlId == IDC_G_OPEN_HOTKEY || controlId == IDC_G_PIN_HOTKEY ||
             controlId == IDC_G_DELETE_HOTKEY || controlId == IDC_G_PREVIEW_HOTKEY) {
+            // The hotkey boxes are read-only edits, which Windows paints like
+            // static text on the page background. Paint them as input fields,
+            // with the system colours so high-contrast themes still apply.
             const HDC dc = reinterpret_cast<HDC>(wParam);
-            SetBkColor(dc, RGB(255, 255, 255));
-            SetTextColor(dc, RGB(0, 0, 0));
+            SetBkColor(dc, GetSysColor(COLOR_WINDOW));
+            SetTextColor(dc, GetSysColor(COLOR_WINDOWTEXT));
             handled = TRUE;
-            return reinterpret_cast<LRESULT>(GetStockObject(WHITE_BRUSH));
+            return reinterpret_cast<LRESULT>(GetSysColorBrush(COLOR_WINDOW));
         }
         handled = FALSE;
         return 0;
     }
 
     LRESULT OnInitDialog(UINT, WPARAM, LPARAM, BOOL &handled) {
+        // Pages sit on a tab control; let them draw the tab body instead of
+        // the plain dialog colour.
+        EnableThemeDialogTexture(this->m_hWnd, ETDT_ENABLETAB);
         handled = TRUE;
         return TRUE;
     }
@@ -362,9 +379,10 @@ private:
     }
 
     CMessageMap *m_ownerMessageMap = nullptr;
+    CWindow m_tabs;
 };
 
-class SettingsWindow : public CDialogImpl<SettingsWindow> {
+class SettingsWindow : public CDialogImpl<SettingsWindow>, public CMessageFilter {
 public:
     enum { IDD = IDD_SETTINGS };
 
@@ -383,6 +401,8 @@ public:
     bool IsOpen() const noexcept { return m_hWnd != nullptr && IsWindowVisible(); }
     HWND Window() const noexcept { return m_hWnd; }
 
+    BOOL PreTranslateMessage(MSG *message) override;
+
     BEGIN_MSG_MAP(SettingsWindow)
         MESSAGE_HANDLER(WM_INITDIALOG, OnInitDialog)
         MESSAGE_HANDLER(WM_DPICHANGED, OnDpiChanged)
@@ -390,6 +410,7 @@ public:
         MESSAGE_HANDLER(WM_CLOSE, OnClose)
         MESSAGE_HANDLER(WM_DESTROY, OnDestroy)
 
+        COMMAND_ID_HANDLER(IDCANCEL, OnCancelCommand)
         COMMAND_HANDLER(IDC_G_CHECK_NOW, BN_CLICKED, OnCheckUpdatesCommand)
         COMMAND_HANDLER(IDC_G_NOTIFICATIONS, BN_CLICKED, OnNotificationsCommand)
         COMMAND_HANDLER(IDC_A_RESET_POSITION, BN_CLICKED, OnResetPositionCommand)
@@ -455,6 +476,7 @@ private:
     void SetPage(int page);
     void SetIgnorePage(int page);
     void LayoutPages();
+    void ScaleForDpi(UINT old_dpi, UINT new_dpi);
 
     void LoadControlsFromSettings();
     void LoadGeneralControls();
@@ -476,6 +498,7 @@ private:
     LRESULT OnDpiChanged(UINT, WPARAM, LPARAM, BOOL &handled);
     LRESULT OnSize(UINT, WPARAM, LPARAM, BOOL &handled);
     LRESULT OnClose(UINT, WPARAM, LPARAM, BOOL &handled);
+    LRESULT OnCancelCommand(WORD, WORD, HWND, BOOL &handled);
     LRESULT OnCheckUpdatesCommand(WORD, WORD, HWND, BOOL &handled);
     LRESULT OnNotificationsCommand(WORD, WORD, HWND, BOOL &handled);
     LRESULT OnResetPositionCommand(WORD, WORD, HWND, BOOL &handled);
@@ -512,6 +535,10 @@ private:
     bool m_destroying = false;
     bool m_updateCheckBusy = false;
     UniqueIcon m_windowIcon;
+    UINT m_dpi = USER_DEFAULT_SCREEN_DPI;
+    // Font for the current DPI once the window has moved to another DPI; the
+    // dialog manager owns the font the templates were created with.
+    CFont m_dpiFont;
 
     AppSettings m_settings{};
     StorageWorker::IgnoreLists m_ignoredLists;
