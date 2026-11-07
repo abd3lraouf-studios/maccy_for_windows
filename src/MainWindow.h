@@ -193,6 +193,7 @@ private:
 
     // Actions
     void ShowMainWindow(PopupPosition popup_position);
+    void RevealPopup();
     void PasteItem(int index);
     void PasteSelectedItem();
     void ToggleSelectedPin();
@@ -338,6 +339,8 @@ private:
     sqlite3_int64 m_previewItemId = 0;
     bool m_previewSuppressed = false;
     bool m_popupVisible = false;
+    // Open, but hidden until its history query fills the lists.
+    bool m_revealPending = false;
     // Outside click on the tray icon's padding. NIN_SELECT for that same
     // gesture must not reopen the popup the hook just closed.
     DWORD m_outsideDismissTick = 0;

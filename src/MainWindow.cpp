@@ -176,6 +176,10 @@ constexpr int kTrayPopupGapDip = 6;
 // Timers of this window only; the IDs stay clear of AppConstants::Timer's
 // sequence, whose timers share the window.
 constexpr UINT_PTR kPopupDeactivatedTimer = 101;
+constexpr UINT_PTR kRevealPopupTimer = 102;
+// How long an open waits for its history query before showing the lists
+// it has. A free storage worker answers in a few milliseconds.
+constexpr UINT kRevealPopupFallbackMs = 100;
 
 bool IsMouseButtonDown() {
     return (::GetAsyncKeyState(VK_LBUTTON) & 0x8000) != 0 ||
@@ -574,7 +578,9 @@ void MainWindow::LayoutHistoryControls() {
     m_historyListControls.RefreshItemHeights();
     const int margin = headerMetrics.windowMargin;
     const int width = std::max(1L, client.right - 2 * margin);
-    const bool header = m_search.IsWindowVisible() != FALSE;
+    // The search's own visibility: the popup is laid out while still hidden
+    // when it opens, and IsWindowVisible would report the hidden parent.
+    const bool header = (m_search.GetStyle() & WS_VISIBLE) != 0;
     int titleWidth = 0;
 
     if (header && m_settings.show_title) {
@@ -1322,6 +1328,7 @@ void MainWindow::ApplyHistoryItems(
         } else if (!m_keyboardHandler.GetActiveItemId()) {
             HidePreview();
         }
+        RevealPopup();
     } catch (const std::exception& error) {
         m_loadingList = false;
         for (CListBox* list : {
@@ -1953,6 +1960,9 @@ void MainWindow::HideMainWindow() {
     UninstallPopupDismissHooks();
     SaveWindowGeometry();
     m_popupVisible = false;
+    // Closed before its query returned: it must not appear afterwards.
+    m_revealPending = false;
+    KillTimer(kRevealPopupTimer);
     HidePreview();
     ShowWindow(SW_HIDE);
 }
@@ -2658,6 +2668,13 @@ LRESULT MainWindow::OnTimer(UINT, WPARAM wParam, LPARAM, BOOL& handled) {
         ShowPreviewForCandidate();
         return 0;
     }
+    if (wParam == kRevealPopupTimer) {
+        handled = TRUE;
+        // The storage worker is busy: show the lists as they are rather
+        // than keep the user waiting.
+        RevealPopup();
+        return 0;
+    }
     if (wParam == kPopupDeactivatedTimer) {
         handled = TRUE;
         KillTimer(kPopupDeactivatedTimer);
@@ -2896,9 +2913,24 @@ void MainWindow::ShowMainWindow(PopupPosition popup_position) {
     RequestUiUpdate(AppConstants::UiUpdate::kHistory | AppConstants::UiUpdate::kLayout);
     PositionPopup(popup_position);
 
+    // Open before the query runs: its result schedules the auto-preview,
+    // which only an open popup accepts.
     m_popupVisible = true;
-    ShowWindow(SW_SHOW);
+    // The lists still hold the last session's history, possibly filtered by
+    // its search. The popup appears once this open's query has replaced
+    // them, so its first frame is current.
+    m_revealPending = true;
+    ::SetTimer(m_hWnd, kRevealPopupTimer, kRevealPopupFallbackMs, nullptr);
     ApplyPendingState();
+}
+
+void MainWindow::RevealPopup() {
+    if (!m_revealPending) {
+        return;
+    }
+    m_revealPending = false;
+    KillTimer(kRevealPopupTimer);
+    ShowWindow(SW_SHOW);
     m_historyListControls.ResetScrollPositions();
     ForceForeground(m_hWnd);
     FocusPopupForTyping();
@@ -2907,7 +2939,8 @@ void MainWindow::ShowMainWindow(PopupPosition popup_position) {
     // does not have to wait out the button release.
     InstallPopupDismissHooks();
 
-    UpdateWindow();
+    // Paint the lists too before returning to the message loop.
+    RedrawWindow(nullptr, nullptr, RDW_UPDATENOW | RDW_ALLCHILDREN);
     m_keyboardHandler.UpdateHistoryHoverFromCursor(
         m_items,
         m_historyListControls.HistoryListWindow(),
