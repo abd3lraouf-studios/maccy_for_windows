@@ -1,5 +1,39 @@
 # Changelog
 
+## [1.5.0](https://github.com/abd3lraouf-studios/maccy_for_windows/compare/v1.4.2...v1.5.0) (2026-11-07)
+
+First release of the abd3lraouf-studios fork of [halifox/maccy_for_windows](https://github.com/halifox/maccy_for_windows).
+
+### Features
+
+* **notifications:** show a Windows notification for every copy, with the source app's icon and name, a short text snippet, or a thumbnail for images; Maccy now appears in Settings > System > Notifications, where it can be turned off or silenced
+* **i18n:** the app, installer and documentation are English only
+* **update:** check this fork's releases for updates
+
+### Bug Fixes
+
+* **popup:** follow the tray icon when a shell replacement such as Seelen UI hosts it in a top bar, and open downward from a top bar
+* **popup:** close when another program takes focus (Alt+Tab, Win)
+* **popup:** show this open's history on the first frame instead of the previous session's list
+* **popup:** open at the right size on a monitor with a different scale
+* **tray:** bring the icon back after Explorer or the shell restarts, and follow light/dark theme changes
+* **update:** bound every network step so Exit can no longer hang on a stalled update check; verify the certificate's host name; trust the Windows certificate store, which fixes update checks that always failed; accept only this repository's release links
+* **paste:** "Paste without formatting" now pastes plain text only (it used to keep HTML and RTF)
+* **paste:** wait for Shift, Alt and Win to be released so the target receives exactly Ctrl+V, and never paste into a window the user has switched away from
+* **hotkey:** run the keyboard hook on its own thread so a busy moment can no longer make Windows drop the global shortcut
+* **pins:** new pin keys skip the digits 1-9, which Ctrl/Alt+1..9 use for the newest items
+* **pins:** editing a pinned item works again and is no longer undone when the original text is copied again
+* **clipboard:** read only the clipboard formats that will be kept, so copying large Excel ranges no longer stalls other apps
+* **clipboard:** "Ignore next copy" is no longer used up by Maccy's own paste
+* **clipboard:** copies made by scripts (clip.exe, PowerShell) are no longer credited to Maccy
+* **clipboard:** HTML-only copies no longer leak the CF_HTML header into their text; a broken ignore regex no longer drops the copy
+* **storage:** the database shrinks again after trims and clears, and its write-ahead log is capped
+* **settings:** Tab, Shift+Tab, arrow keys and Esc work in Settings; Settings and the preview rescale correctly between monitors
+* **settings:** saving settings no longer depends on writing the launch-at-login entry
+* **ui:** transparent images show their real background; rows, icons and fonts follow the display scale and Windows text size; no more flicker while resizing; legible search highlights in high contrast
+* **privacy:** clearing history also deletes cached notification images and Maccy's notifications
+
+
 ## [1.4.2](https://github.com/halifox/maccy_for_windows/compare/v1.4.1...v1.4.2) (2026-11-04)
 
 
