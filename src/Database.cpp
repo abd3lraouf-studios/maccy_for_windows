@@ -1249,32 +1249,52 @@ void Database::UpdatePinnedItem(
     const std::wstring preview = ClipboardRules::StoredPreview(
         ClipboardRules::MakeTitle(std::wstring(text), true)
     );
-    ClipboardFormatData data;
-    data.name = L"CF_UNICODETEXT";
-    data.format = CF_UNICODETEXT;
-    data.bytes.resize((text.size() + 1) * sizeof(wchar_t));
-    std::memcpy(data.bytes.data(), text.data(), text.size() * sizeof(wchar_t));
-    std::memset(data.bytes.data() + text.size() * sizeof(wchar_t), 0, sizeof(wchar_t));
+    const std::vector<ClipboardFormatData> formats{ClipboardRules::UnicodeTextFormat(text)};
+    // The fingerprint must follow the content: keeping the old one let a later
+    // copy of the original text match this row and overwrite the edit.
+    const std::wstring fingerprint = ClipboardRules::Fingerprint(formats);
 
-    {
-        auto transaction = BeginTransaction();
-        Statement update(
-            m_db,
-            "UPDATE history_items SET pin = ?1, pinned = 1, title = ?2, preview = ?3, "
-            "title_custom = 1, has_text = 1, has_image = 0, has_files = 0 "
-            "WHERE id = ?4;"
-        );
-        BindText16(m_db, update.get(), 1, pin_key);
-        BindText16(m_db, update.get(), 2, title.empty() ? preview : title);
-        BindText16(m_db, update.get(), 3, preview);
-        CheckSqliteResult(m_db, sqlite3_bind_int64(update.get(), 4, id), "Unable to bind item id");
-        if (sqlite3_step(update.get()) != SQLITE_DONE) {
-            throw MakeSqliteError(m_db, "Unable to update pinned item");
-        }
-        ReplaceFormats(id, {data});
-        ReplaceSearchIndex(id, text, {});
-        transaction.Commit();
+    auto transaction = BeginTransaction();
+    // Fingerprints are unique, so another row already holding the edited
+    // content would reject the update. It is a duplicate of the edited item;
+    // fold it in, removing its contentless FTS entry by hand as DeleteItem does.
+    Statement remove_duplicate_index(
+        m_db,
+        "DELETE FROM history_fts WHERE rowid IN ("
+        "SELECT id FROM history_items WHERE fingerprint = ?1 AND id <> ?2);"
+    );
+    BindText16(m_db, remove_duplicate_index.get(), 1, fingerprint);
+    CheckSqliteResult(m_db, sqlite3_bind_int64(remove_duplicate_index.get(), 2, id), "Unable to bind item id");
+    if (sqlite3_step(remove_duplicate_index.get()) != SQLITE_DONE) {
+        throw MakeSqliteError(m_db, "Unable to remove duplicate search index");
     }
+    Statement remove_duplicate(
+        m_db,
+        "DELETE FROM history_items WHERE fingerprint = ?1 AND id <> ?2;"
+    );
+    BindText16(m_db, remove_duplicate.get(), 1, fingerprint);
+    CheckSqliteResult(m_db, sqlite3_bind_int64(remove_duplicate.get(), 2, id), "Unable to bind item id");
+    if (sqlite3_step(remove_duplicate.get()) != SQLITE_DONE) {
+        throw MakeSqliteError(m_db, "Unable to remove duplicate history item");
+    }
+
+    Statement update(
+        m_db,
+        "UPDATE history_items SET fingerprint = ?1, pin = ?2, pinned = 1, title = ?3, "
+        "preview = ?4, title_custom = 1, has_text = 1, has_image = 0, has_files = 0 "
+        "WHERE id = ?5;"
+    );
+    BindText16(m_db, update.get(), 1, fingerprint);
+    BindText16(m_db, update.get(), 2, pin_key);
+    BindText16(m_db, update.get(), 3, title.empty() ? preview : title);
+    BindText16(m_db, update.get(), 4, preview);
+    CheckSqliteResult(m_db, sqlite3_bind_int64(update.get(), 5, id), "Unable to bind item id");
+    if (sqlite3_step(update.get()) != SQLITE_DONE) {
+        throw MakeSqliteError(m_db, "Unable to update pinned item");
+    }
+    ReplaceFormats(id, formats);
+    ReplaceSearchIndex(id, text, {});
+    transaction.Commit();
 }
 
 void Database::UpdatePinnedMetadata(

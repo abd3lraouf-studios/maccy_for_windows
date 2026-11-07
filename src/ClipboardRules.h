@@ -78,6 +78,11 @@ struct SearchParts {
 
 SearchParts SearchPartsFromFormats(const std::vector<ClipboardFormatData> &data);
 
+// Content identity of a set of formats, independent of their order. History
+// rows are deduplicated by it, so every writer of history_items.fingerprint
+// must use this one hash.
+std::wstring Fingerprint(const std::vector<ClipboardFormatData> &data);
+
 // A NUL-terminated CF_UNICODETEXT payload holding `text`.
 ClipboardFormatData UnicodeTextFormat(std::wstring_view text);
 

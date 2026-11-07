@@ -2,9 +2,11 @@
 
 #include <algorithm>
 #include <array>
+#include <cstdio>
 #include <cstdlib>
 #include <cwctype>
 #include <cstring>
+#include <iterator>
 #include <limits>
 #include <regex>
 #include <string>
@@ -653,6 +655,53 @@ SearchParts SearchPartsFromFormats(const std::vector<ClipboardFormatData> &data)
             : std::move(accumulator.rich_text));
     result.paths = std::move(accumulator.paths);
     return result;
+}
+
+std::wstring Fingerprint(const std::vector<ClipboardFormatData> &data) {
+    std::vector<const ClipboardFormatData *> ordered;
+    ordered.reserve(data.size());
+    for (const ClipboardFormatData &item : data) {
+        ordered.push_back(&item);
+    }
+    std::sort(ordered.begin(), ordered.end(), [](const ClipboardFormatData *lhs, const ClipboardFormatData *rhs) {
+        if (lhs->format != rhs->format) {
+            return lhs->format < rhs->format;
+        }
+        return lhs->name < rhs->name;
+    });
+
+    // Dual independent FNV-1a streams -> 128-bit hex fingerprint (L-08). The
+    // byte sequence must stay stable: stored rows are matched against it.
+    std::uint64_t hash_a = 1469598103934665603ULL;
+    std::uint64_t hash_b = 0xcbf29ce484222325ULL;
+    const auto add_bytes = [&hash_a, &hash_b](const void *source, size_t count) {
+        const auto *bytes = static_cast<const unsigned char *>(source);
+        for (size_t index = 0; index < count; ++index) {
+            hash_a ^= bytes[index];
+            hash_a *= 1099511628211ULL;
+            hash_b ^= static_cast<std::uint64_t>(bytes[index]) + 0x9e3779b97f4a7c15ULL;
+            hash_b *= 1099511628211ULL;
+        }
+    };
+
+    const std::uint64_t format_count = ordered.size();
+    std::uint64_t total_bytes = 0;
+    for (const ClipboardFormatData *item : ordered) {
+        total_bytes += item->bytes.size();
+    }
+    add_bytes(&format_count, sizeof(format_count));
+    add_bytes(&total_bytes, sizeof(total_bytes));
+    for (const ClipboardFormatData *item : ordered) {
+        add_bytes(item->name.data(), item->name.size() * sizeof(wchar_t));
+        add_bytes(&item->format, sizeof(item->format));
+        const std::uint64_t size = item->bytes.size();
+        add_bytes(&size, sizeof(size));
+        add_bytes(item->bytes.data(), item->bytes.size());
+    }
+
+    wchar_t text[33]{};
+    std::swprintf(text, std::size(text), L"%016llx%016llx", hash_a, hash_b);
+    return text;
 }
 
 ClipboardFormatData UnicodeTextFormat(std::wstring_view text) {

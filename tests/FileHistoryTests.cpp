@@ -10,6 +10,7 @@
 #include <fstream>
 #include <iostream>
 #include <stdexcept>
+#include <string_view>
 
 namespace {
 
@@ -86,6 +87,52 @@ void CheckFileMetadata() {
         "ANSI file lists must remain supported");
 }
 
+ClipboardSnapshot TextCapture(std::wstring_view text) {
+    ClipboardSnapshot capture;
+    capture.data.push_back(ClipboardRules::UnicodeTextFormat(text));
+    capture.fingerprint = ClipboardRules::Fingerprint(capture.data);
+    capture.title = std::wstring(text);
+    capture.preview = std::wstring(text);
+    capture.has_text = true;
+    return capture;
+}
+
+size_t HistoryCount(const Database &database) {
+    return database.SearchHistory(L"", 0, 0, false).size();
+}
+
+void CheckPinnedEditSurvivesRecopy() {
+    // Rows saved before the hash moved must still match: pin its exact output.
+    Check(TextCapture(L"original").fingerprint == L"108598b034ffa79e459804a44c9c7eec",
+        "Fingerprint output changed");
+
+    Database database(L":memory:");
+    database.SaveClipboard(TextCapture(L"original"), 10);
+    const sqlite3_int64 id = database.SearchHistory(L"", 0, 0, false).front().id;
+    database.TogglePin(id, L"a", true);
+    database.UpdatePinnedItem(id, L"a", L"", L"edited");
+
+    database.SaveClipboard(TextCapture(L"original"), 10);
+    Check(HistoryCount(database) == 2, "Copying the original text again must add a new item");
+    const auto pinned = database.GetItem(id, PayloadMode::Full);
+    Check(pinned && pinned->pinned && pinned->preview == L"edited" && pinned->data.size() == 1 &&
+            ClipboardRules::DecodeUnicodeText(pinned->data.front().bytes) == L"edited",
+        "Re-copying the original text overwrote the edited pin");
+
+    // Both writers share one hash, so the edited payload is the pinned row.
+    database.SaveClipboard(TextCapture(L"edited"), 10);
+    Check(HistoryCount(database) == 2 && database.GetItem(id)->copy_count == 2,
+        "The edited pin must match a copy of its own content");
+
+    // Editing a pin into content another row already holds folds that row in
+    // instead of failing on the unique fingerprint.
+    database.SaveClipboard(TextCapture(L"duplicate"), 10);
+    database.UpdatePinnedItem(id, L"a", L"", L"duplicate");
+    const auto history = database.SearchHistory(L"duplicate", 0, 0, false);
+    Check(HistoryCount(database) == 2 && history.size() == 1 && history.front().id == id,
+        "Editing a pin into existing content must fold the duplicate in");
+}
+
 struct TemporaryFile {
     std::filesystem::path path;
     TemporaryFile() {
@@ -160,6 +207,7 @@ int main() {
     try {
         CheckFileMetadata();
         CheckImagePreview();
+        CheckPinnedEditSurvivesRecopy();
     } catch (const std::exception &error) {
         std::cerr << error.what() << '\n';
         exit_code = 1;

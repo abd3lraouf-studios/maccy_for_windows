@@ -11,10 +11,8 @@
 #include <algorithm>
 #include <array>
 #include <cstring>
-#include <iomanip>
 #include <limits>
 #include <regex>
-#include <sstream>
 #include <utility>
 
 #include <shellapi.h>
@@ -199,44 +197,6 @@ std::optional<std::vector<unsigned char>> CaptureBitmapAsDib(HBITMAP bitmap) {
     ::DeleteObject(section);
     return result;
 }
-
-class ClipboardFingerprint {
-public:
-    void AddMeta(std::uint64_t format_count, std::uint64_t total_bytes) noexcept {
-        AddBytes(reinterpret_cast<const unsigned char *>(&format_count), sizeof(format_count));
-        AddBytes(reinterpret_cast<const unsigned char *>(&total_bytes), sizeof(total_bytes));
-    }
-
-    void Add(const std::wstring& name, UINT format, const unsigned char* bytes, size_t count) noexcept {
-        AddBytes(reinterpret_cast<const unsigned char*>(name.data()), name.size() * sizeof(wchar_t));
-        AddBytes(reinterpret_cast<const unsigned char*>(&format), sizeof(format));
-        const std::uint64_t size = static_cast<std::uint64_t>(count);
-        AddBytes(reinterpret_cast<const unsigned char *>(&size), sizeof(size));
-        AddBytes(bytes, count);
-    }
-
-    std::wstring Finish() const {
-        // Dual independent FNV-1a streams → 128-bit hex fingerprint (L-08).
-        std::wstringstream stream;
-        stream << std::hex << std::setfill(L'0')
-               << std::setw(16) << m_hash_a
-               << std::setw(16) << m_hash_b;
-        return stream.str();
-    }
-
-private:
-    void AddBytes(const unsigned char* bytes, size_t count) noexcept {
-        for (size_t index = 0; index < count; ++index) {
-            m_hash_a ^= bytes[index];
-            m_hash_a *= 1099511628211ULL;
-            m_hash_b ^= static_cast<std::uint64_t>(bytes[index]) + 0x9e3779b97f4a7c15ULL;
-            m_hash_b *= 1099511628211ULL;
-        }
-    }
-
-    std::uint64_t m_hash_a = 1469598103934665603ULL;
-    std::uint64_t m_hash_b = 0xcbf29ce484222325ULL;
-};
 
 bool IsRedundantBitmapFormat(UINT format, bool has_dib, bool has_dibv5) noexcept {
     return (format == CF_DIB && has_dibv5) ||
@@ -446,31 +406,6 @@ std::wstring ClipboardMonitor::FilesPreview(HGLOBAL data) {
     return ClipboardRules::StoredPreview(std::move(result));
 }
 
-std::wstring ClipboardMonitor::HashCapture(const std::vector<ClipboardFormatData>& data) {
-    std::vector<const ClipboardFormatData *> ordered;
-    ordered.reserve(data.size());
-    for (const ClipboardFormatData &item : data) {
-        ordered.push_back(&item);
-    }
-    std::sort(ordered.begin(), ordered.end(), [](const ClipboardFormatData *lhs, const ClipboardFormatData *rhs) {
-        if (lhs->format != rhs->format) {
-            return lhs->format < rhs->format;
-        }
-        return lhs->name < rhs->name;
-    });
-
-    ClipboardFingerprint fingerprint;
-    std::uint64_t total_bytes = 0;
-    for (const ClipboardFormatData *item : ordered) {
-        total_bytes += item->bytes.size();
-    }
-    fingerprint.AddMeta(ordered.size(), total_bytes);
-    for (const ClipboardFormatData *item : ordered) {
-        fingerprint.Add(item->name, item->format, item->bytes.data(), item->bytes.size());
-    }
-    return fingerprint.Finish();
-}
-
 std::optional<ClipboardSnapshot> ClipboardMonitor::CaptureClipboard() const {
     if (m_settings.respect_windows_clipboard_history_markers &&
         IsExcludedByWindowsClipboardHistoryMarker()) {
@@ -573,7 +508,7 @@ std::optional<ClipboardSnapshot> ClipboardMonitor::CaptureClipboard() const {
     if (capture.data.empty()) {
         return std::nullopt;
     }
-    capture.fingerprint = HashCapture(capture.data);
+    capture.fingerprint = ClipboardRules::Fingerprint(capture.data);
     capture.preview = !text.empty() ? text : file_preview;
     if (capture.preview.empty() && capture.has_image) {
         capture.preview = Localization::Text(IDS_CONTENT_IMAGE);
