@@ -1,6 +1,7 @@
 #include "HistoryListControls.h"
 
 #include "SearchHeaderLayout.h"
+#include "Theme.h"
 #include "UiFont.h"
 
 #include <windowsx.h>
@@ -506,7 +507,7 @@ LRESULT HistoryListControls::OnHistoryListEraseBackground(
         empty.top += std::max(1, list.GetItemHeight(row));
     }
     if (empty.top < empty.bottom) {
-        CDCHandle(reinterpret_cast<HDC>(wParam)).FillRect(&empty, COLOR_WINDOW);
+        CDCHandle(reinterpret_cast<HDC>(wParam)).FillRect(&empty, Theme::WindowBrush());
     }
     return 1;
 }

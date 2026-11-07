@@ -40,6 +40,29 @@ enum class SearchVisibility {
     DuringSearch = 1,
 };
 
+// Colour theme of everything Maccy paints. Stored by index: append only.
+enum class ThemeFamily {
+    Windows = 0,
+    Solarized = 1,
+    Monokai = 2,
+    Dracula = 3,
+    Nord = 4,
+    Gruvbox = 5,
+    Catppuccin = 6,
+    TokyoNight = 7,
+    One = 8,
+    GitHub = 9,
+    RosePine = 10,
+};
+constexpr int kThemeFamilyCount = 11;
+
+// Light or dark variant of the theme: follow Windows, or force one.
+enum class ThemeMode {
+    System = 0,
+    Light = 1,
+    Dark = 2,
+};
+
 struct HotKeyConfig {
     UINT modifiers = MOD_WIN;
     UINT virtual_key = 'V';
@@ -80,6 +103,8 @@ struct AppSettings {
     bool show_special_symbols = true;
     bool show_application_icons = false;
     bool show_hex_color_swatch = true;
+    ThemeFamily theme = ThemeFamily::Windows;
+    ThemeMode theme_mode = ThemeMode::System;
 
     SearchMode search_mode = SearchMode::Exact;
     bool paste_by_default = false;

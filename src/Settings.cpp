@@ -201,6 +201,20 @@ AppSettings AppSettings::Load(const Database &database) {
         L"appearance.showHexColorSwatch",
         settings.show_hex_color_swatch
     );
+    settings.theme = static_cast<ThemeFamily>(ReadInt(
+        database,
+        L"appearance.theme",
+        static_cast<int>(settings.theme),
+        0,
+        kThemeFamilyCount - 1
+    ));
+    settings.theme_mode = static_cast<ThemeMode>(ReadInt(
+        database,
+        L"appearance.themeMode",
+        static_cast<int>(settings.theme_mode),
+        0,
+        2
+    ));
 
     settings.search_mode = static_cast<SearchMode>(ReadInt(
         database,
@@ -290,6 +304,8 @@ void AppSettings::Save(const Database &database) const {
         WriteBool(database, L"appearance.showSpecialSymbols", show_special_symbols);
         WriteBool(database, L"appearance.showApplicationIcons", show_application_icons);
         WriteBool(database, L"appearance.showHexColorSwatch", show_hex_color_swatch);
+        WriteInt(database, L"appearance.theme", static_cast<int>(theme));
+        WriteInt(database, L"appearance.themeMode", static_cast<int>(theme_mode));
 
         WriteInt(database, L"general.searchMode", static_cast<int>(search_mode));
         WriteBool(database, L"general.pasteByDefault", paste_by_default);

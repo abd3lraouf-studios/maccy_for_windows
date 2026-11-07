@@ -37,6 +37,7 @@ Forked from [halifox/maccy_for_windows](https://github.com/halifox/maccy_for_win
 - Pin items, edit pinned text, and ignore applications, clipboard formats, and regex content;
 - Honor the Windows clipboard history markers, so content explicitly marked as not belonging in history is not saved;
 - Show a Windows notification for every captured copy, with the source app's icon and name and a short text snippet, or a thumbnail for images;
+- Eleven themes, each with a light and a dark version, picked from live previews; follow Windows light/dark or force either;
 - Check GitHub Releases manually or at startup; the app only announces a new version and never downloads or replaces itself;
 - Local SQLite storage; clipboard contents are never uploaded.
 
@@ -81,6 +82,10 @@ To upgrade, use the same NSIS installer: open GitHub Releases from the app's upd
 By default, uninstalling keeps the clipboard history and settings in `%LOCALAPPDATA%\maccy`. To also delete the history, pinned items, settings, and other local Maccy data, tick the delete option on the uninstall page; this cannot be undone.
 
 User-visible changes are recorded in [`CHANGELOG.md`](CHANGELOG.md).
+
+## Themes
+
+**Settings > Themes** shows a live preview of the popup in every theme: Windows (your accent colour), Solarized, Monokai Pro, Dracula, Nord, Gruvbox, Catppuccin, Tokyo Night, One, GitHub, and Rosé Pine. Each theme ships its official light and dark variant, taken from the theme's own site or repository. **Mode** follows the Windows light/dark setting or forces light or dark, and a change applies immediately to the popup, the preview, Settings, and the tray menu. High contrast always uses the Windows system colours.
 
 ## Copy notifications
 

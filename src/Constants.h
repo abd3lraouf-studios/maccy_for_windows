@@ -38,6 +38,9 @@ namespace AppConstants {
     constexpr UINT kPopupDismissMessage = kCustomMessageBase + 2;
     // Posted by the icon loader when a shell icon is ready to draw.
     constexpr UINT kHistoryIconMessage = kCustomMessageBase + 4;
+    // Sent by MainWindow to the Settings and preview windows after
+    // Theme::Update changed the palette: re-read Theme::Current() and repaint.
+    constexpr UINT kThemeChangedMessage = kCustomMessageBase + 6;
 
     // ========================================================================
     // Timer IDs
@@ -87,7 +90,7 @@ namespace AppConstants {
     // Settings window
     // ========================================================================
     namespace SettingsUI {
-        constexpr int kPageCount = 6;
+        constexpr int kPageCount = 7;
         constexpr int kIgnorePageCount = 3;
     }
 

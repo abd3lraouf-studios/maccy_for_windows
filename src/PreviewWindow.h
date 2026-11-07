@@ -1,6 +1,7 @@
 #pragma once
 
 #include "PlatformConfig.h"
+#include "Constants.h"
 
 #include <atlbase.h>
 #include <atlapp.h>
@@ -31,6 +32,8 @@ public:
         MESSAGE_HANDLER(WM_CTLCOLOREDIT, OnControlColor)
         MESSAGE_HANDLER(WM_CTLCOLORSTATIC, OnControlColor)
         MESSAGE_HANDLER(WM_CTLCOLORDLG, OnControlColor)
+        MESSAGE_HANDLER(WM_CTLCOLORBTN, OnControlColor)
+        MESSAGE_HANDLER(AppConstants::kThemeChangedMessage, OnThemeChanged)
     ALT_MSG_MAP(1)
         MESSAGE_HANDLER(WM_GETDLGCODE, OnActionButtonDialogCode)
         MESSAGE_HANDLER(WM_SETFOCUS, OnActionButtonFocus)
@@ -62,7 +65,8 @@ private:
     LRESULT OnDrawItem(UINT, WPARAM, LPARAM lParam, BOOL &handled);
     LRESULT OnDestroy(UINT, WPARAM, LPARAM, BOOL &handled);
     LRESULT OnCommand(WORD, WORD id, HWND, BOOL &handled);
-    LRESULT OnControlColor(UINT, WPARAM, LPARAM, BOOL &handled);
+    LRESULT OnControlColor(UINT, WPARAM wParam, LPARAM lParam, BOOL &handled);
+    LRESULT OnThemeChanged(UINT, WPARAM, LPARAM, BOOL &handled);
     LRESULT OnActionButtonDialogCode(UINT, WPARAM, LPARAM, BOOL &handled);
     LRESULT OnActionButtonFocus(UINT, WPARAM, LPARAM, BOOL &handled);
     LRESULT OnActionButtonKey(UINT, WPARAM, LPARAM, BOOL &handled);

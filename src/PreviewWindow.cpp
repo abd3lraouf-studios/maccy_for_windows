@@ -4,6 +4,7 @@
 #include "GdiScope.h"
 #include "Localization.h"
 #include "SearchHeaderLayout.h"
+#include "Theme.h"
 #include "UiFont.h"
 
 #include <dwmapi.h>
@@ -319,12 +320,13 @@ LRESULT PreviewWindow::OnDrawItem(UINT, WPARAM, LPARAM lParam, BOOL &handled) {
     }
     handled = TRUE;
     ScopedDcState dc_state(draw->hDC);
-    ::FillRect(draw->hDC, &draw->rcItem, ::GetSysColorBrush(COLOR_WINDOW));
+    const Theme::Palette &palette = Theme::Current();
+    ::FillRect(draw->hDC, &draw->rcItem, Theme::WindowBrush());
     if (m_bitmap.IsNull()) {
         // The owner-draw DC starts with the system font and black text, which
-        // vanishes on a dark high contrast background.
+        // vanishes on a dark background.
         ScopedGdiObjectSelection font(draw->hDC, static_cast<HFONT>(m_font));
-        ::SetTextColor(draw->hDC, ::GetSysColor(COLOR_GRAYTEXT));
+        ::SetTextColor(draw->hDC, palette.muted);
         ::SetBkMode(draw->hDC, TRANSPARENT);
         ::DrawTextW(
             draw->hDC,
@@ -365,7 +367,7 @@ LRESULT PreviewWindow::OnDrawItem(UINT, WPARAM, LPARAM lParam, BOOL &handled) {
     if (!selected_bitmap.IsSelected() || !selected_flattened.IsSelected()) {
         return 0;
     }
-    flattened.FillRect(&image_rect, COLOR_WINDOW);
+    flattened.FillRect(&image_rect, Theme::WindowBrush());
     flattened.AlphaBlend(0, 0, m_bitmapWidth, m_bitmapHeight,
                          source, 0, 0, m_bitmapWidth, m_bitmapHeight, PreviewBitmap::kBlend);
     ::SetStretchBltMode(draw->hDC, HALFTONE);
@@ -383,7 +385,9 @@ LRESULT PreviewWindow::OnDrawItem(UINT, WPARAM, LPARAM lParam, BOOL &handled) {
         m_bitmapHeight,
         SRCCOPY
     );
-    ::FrameRect(draw->hDC, &draw->rcItem, ::GetSysColorBrush(COLOR_GRAYTEXT));
+    // The stock DC brush paints in the colour set on this DC.
+    ::SetDCBrushColor(draw->hDC, palette.muted);
+    ::FrameRect(draw->hDC, &draw->rcItem, static_cast<HBRUSH>(::GetStockObject(DC_BRUSH)));
     return 0;
 }
 
@@ -433,10 +437,23 @@ LRESULT PreviewWindow::OnActionButtonKey(UINT, WPARAM, LPARAM, BOOL &handled) {
     return 0;
 }
 
-LRESULT PreviewWindow::OnControlColor(UINT, WPARAM wParam, LPARAM, BOOL &handled) {
+LRESULT PreviewWindow::OnControlColor(UINT, WPARAM wParam, LPARAM lParam, BOOL &handled) {
     handled = TRUE;
-    HDC dc = reinterpret_cast<HDC>(wParam);
-    SetTextColor(dc, GetSysColor(COLOR_WINDOWTEXT));
-    SetBkColor(dc, GetSysColor(COLOR_WINDOW));
-    return reinterpret_cast<LRESULT>(GetSysColorBrush(COLOR_WINDOW));
+    // The read-only text box asks as static text; give it the text box surface
+    // so it reads as a field. The dialog, status label and button corners take
+    // the window colour.
+    const Theme::Palette &palette = Theme::Current();
+    const bool text_box = reinterpret_cast<HWND>(lParam) == m_text.m_hWnd;
+    CDCHandle dc(reinterpret_cast<HDC>(wParam));
+    dc.SetTextColor(palette.text);
+    dc.SetBkColor(text_box ? palette.surface : palette.window);
+    return reinterpret_cast<LRESULT>(text_box ? Theme::SurfaceBrush() : Theme::WindowBrush());
+}
+
+LRESULT PreviewWindow::OnThemeChanged(UINT, WPARAM, LPARAM, BOOL &handled) {
+    // Every colour is read from the palette while painting, so a repaint is
+    // all a new palette needs. MainWindow already re-applied the window theme.
+    handled = TRUE;
+    RedrawWindow(nullptr, nullptr, RDW_INVALIDATE | RDW_ERASE | RDW_ALLCHILDREN);
+    return 0;
 }
