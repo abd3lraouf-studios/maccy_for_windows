@@ -6,6 +6,7 @@
 #include "Localization.h"
 
 #include <windows.h>
+#include <atltypes.h>
 #include <commctrl.h>
 #include <commdlg.h>
 #include <shellapi.h>
@@ -20,6 +21,9 @@
 
 #include "PinKeys.h"
 #include "TrayIcon.h"
+
+// Defined in main.cpp; owns the thread's CMessageLoop.
+extern CAppModule _Module;
 
 namespace {
 
@@ -120,7 +124,7 @@ std::wstring PinTextContent(const ClipboardItem &item) {
     return {};
 }
 
-// EditPinDialog 实现
+// EditPinDialog
 EditPinDialog::EditPinDialog(const AppSettings &settings, sqlite3_int64 item_id,
                              const std::vector<ClipboardItem> &pins, ClipboardItem item)
     : m_settings(settings), m_itemId(item_id), m_pins(pins), m_item(std::move(item)) {
@@ -150,7 +154,7 @@ LRESULT EditPinDialog::OnInitDialog(UINT, WPARAM, LPARAM, BOOL &handled) {
         m_originalContent = item.preview;
     }
 
-    // 只展示策略允许且当前项目可以使用的键位。
+    // Offer only the keys the pin policy allows for this item.
     for (const wchar_t ch : PinKeyPolicy::Available(m_pins, m_settings, m_itemId)) {
         std::wstring key(1, ch);
         m_keyCombo.AddString(key.c_str());
@@ -160,16 +164,16 @@ LRESULT EditPinDialog::OnInitDialog(UINT, WPARAM, LPARAM, BOOL &handled) {
         m_keyCombo.AddString(m_key.c_str());
     }
 
-    // 设置当前键位
+    // Select the current key.
     int keyIndex = m_keyCombo.FindStringExact(-1, m_key.c_str());
     if (keyIndex != CB_ERR) {
         m_keyCombo.SetCurSel(keyIndex);
     }
 
-    // 设置标题和内容
+    // Fill in the title and content.
     m_titleEdit.SetWindowText(m_title.c_str());
 
-    // 检查是否可编辑文本内容
+    // Only plain-text items can have their content edited.
     m_textEditable = item.has_text && !item.has_image && !item.has_files;
     if (m_textEditable) {
         m_contentEdit.SetWindowText(m_originalContent.c_str());
@@ -187,7 +191,7 @@ LRESULT EditPinDialog::OnInitDialog(UINT, WPARAM, LPARAM, BOOL &handled) {
 LRESULT EditPinDialog::OnOK(WORD, WORD, HWND, BOOL &handled) {
     handled = TRUE;
 
-    // 读取键位
+    // Read the key.
     int keyIndex = m_keyCombo.GetCurSel();
     if (keyIndex != CB_ERR) {
         wchar_t keyBuffer[256] = {};
@@ -195,7 +199,7 @@ LRESULT EditPinDialog::OnOK(WORD, WORD, HWND, BOOL &handled) {
         m_key = keyBuffer;
     }
 
-    // 验证键位
+    // Validate the key.
     std::wstring keyLower = m_key;
     std::transform(keyLower.begin(), keyLower.end(), keyLower.begin(), std::towlower);
     if (!PinKeyPolicy::IsValid(keyLower, m_pins, m_settings, m_itemId)) {
@@ -206,10 +210,10 @@ LRESULT EditPinDialog::OnOK(WORD, WORD, HWND, BOOL &handled) {
     }
     m_key = keyLower;
 
-    // 读取标题
+    // Read the title.
     m_title = ReadWindowText(m_titleEdit);
 
-    // 读取内容（如果可编辑）
+    // Read the content (when editable).
     if (m_textEditable) {
         m_content = ReadWindowText(m_contentEdit);
 
@@ -234,7 +238,7 @@ LRESULT EditPinDialog::OnCancel(WORD, WORD, HWND, BOOL &handled) {
     return 0;
 }
 
-// EditIgnoreDialog 实现
+// EditIgnoreDialog
 EditIgnoreDialog::EditIgnoreDialog(const std::wstring &value, const std::wstring &description, int ignore_page)
     : m_value(value), m_description(description), m_ignorePage(ignore_page) {
 }
@@ -254,7 +258,7 @@ LRESULT EditIgnoreDialog::OnInitDialog(UINT, WPARAM, LPARAM, BOOL &handled) {
     m_valueEdit.SetWindowText(m_value.c_str());
     m_descriptionLabel.SetWindowText(m_description.c_str());
 
-    // 如果是新建，设置默认值
+    // A new entry starts from an example value.
     if (m_value.empty()) {
         if (m_ignorePage == 1) {
             m_valueEdit.SetWindowText(L"xxx.yyy.zzz");
@@ -266,7 +270,7 @@ LRESULT EditIgnoreDialog::OnInitDialog(UINT, WPARAM, LPARAM, BOOL &handled) {
     m_valueEdit.SetSel(0, -1);
     m_valueEdit.SetFocus();
 
-    return FALSE; // 返回 FALSE 表示我们已经设置了焦点
+    return FALSE; // FALSE: focus has already been set.
 }
 
 LRESULT EditIgnoreDialog::OnOK(WORD, WORD, HWND, BOOL &handled) {
@@ -363,15 +367,26 @@ constexpr int kPagePins = 3;
 constexpr int kPageIgnore = 4;
 constexpr int kPageAdvanced = 5;
 
-UINT WindowDpi(CWindow window) {
-    if (window.m_hWnd != nullptr) {
-        CClientDC dc(window);
-        const int dpi = dc.GetDeviceCaps(LOGPIXELSX);
-        if (dpi > 0) {
-            return static_cast<UINT>(dpi);
+int ScaleFromDefaultDpi(int value, UINT dpi) {
+    return MulDiv(value, static_cast<int>(dpi), USER_DEFAULT_SCREEN_DPI);
+}
+
+// Fits pages over the display area of the tab control they belong to. They
+// are its siblings, so the area is computed in the shared parent's client
+// coordinates.
+template <typename Pages>
+void FitPagesToTab(CTabCtrl tabs, const Pages &pages) {
+    CRect area;
+    tabs.GetWindowRect(&area);
+    tabs.GetParent().ScreenToClient(&area);
+    tabs.AdjustRect(FALSE, &area);
+    area.right = std::max(area.right, area.left + 1);
+    area.bottom = std::max(area.bottom, area.top + 1);
+    for (const auto &page : pages) {
+        if (page != nullptr && page->Handle() != nullptr) {
+            page->Window().SetWindowPos(nullptr, &area, SWP_NOZORDER | SWP_NOACTIVATE);
         }
     }
-    return USER_DEFAULT_SCREEN_DPI;
 }
 
 void UpdateBehaviorHint(CStatic window, bool paste_default, bool plain_default) {
@@ -461,8 +476,6 @@ void ConfigureListView(CListViewCtrl list, bool allow_label_editing, bool show_c
     list.SetExtendedListViewStyle(
         LVS_EX_FULLROWSELECT | LVS_EX_DOUBLEBUFFER
     );
-    while (list.DeleteColumn(0)) {
-    }
 }
 
 void AddListViewColumn(CListViewCtrl list, int index, int width, const wchar_t *title) {
@@ -531,9 +544,12 @@ LRESULT HotkeyCaptureEdit::OnCaptureHotkey(UINT, WPARAM virtual_key, LPARAM modi
         m_hotkey = HotKeyConfig{static_cast<UINT>(modifiers), key};
     }
     UpdateText();
-    const HWND focusTarget = ::GetParent(::GetParent(m_hWnd));
-    if (focusTarget != nullptr) {
-        ::SetFocus(focusTarget);
+    // Leave the box so capture ends. The tab strip is a neutral target:
+    // the next control could be another hotkey box, which would start a new
+    // capture, and focusing the dialog itself gives focus straight back here.
+    const HWND tabs = ::GetDlgItem(::GetAncestor(m_hWnd, GA_ROOT), IDC_SETTINGS_TABS);
+    if (tabs != nullptr) {
+        ::SetFocus(tabs);
     }
     handled = TRUE;
     return 0;
@@ -779,37 +795,74 @@ void SettingsWindow::LayoutPages() {
         return;
     }
 
-    RECT tab_rect{};
-    m_tabs.GetClientRect(&tab_rect);
-    TabCtrl_AdjustRect(m_tabs.m_hWnd, FALSE, &tab_rect);
-    const int width = static_cast<int>(std::max<LONG>(1, tab_rect.right - tab_rect.left));
-    const int height = static_cast<int>(std::max<LONG>(1, tab_rect.bottom - tab_rect.top));
+    // The tab control fills the window, as in the template; after a DPI
+    // change only the window has been resized.
+    CRect client;
+    GetClientRect(&client);
+    m_tabs.SetWindowPos(nullptr, &client, SWP_NOZORDER | SWP_NOACTIVATE);
+    FitPagesToTab(m_tabs, m_pages);
 
-    for (const auto &page : m_pages) {
-        if (page != nullptr && page->Handle() != nullptr) {
-            ::SetWindowPos(page->Handle(), nullptr, tab_rect.left, tab_rect.top,
-                           width, height,
-                           SWP_NOZORDER | SWP_NOACTIVATE);
-        }
-    }
-
-    // The ignore page contains a second tab control. Its resource pages must
-    // follow that tab control's client area as well; otherwise a DPI change
-    // leaves the old logical-size child windows clipped.
+    // The ignore page holds a second tab control with its own pages.
     if (m_ignoreTabs.m_hWnd != nullptr) {
-        RECT ignore_rect{};
-        m_ignoreTabs.GetClientRect(&ignore_rect);
-        TabCtrl_AdjustRect(m_ignoreTabs.m_hWnd, FALSE, &ignore_rect);
-        const int ignore_width = static_cast<int>(std::max<LONG>(1, ignore_rect.right - ignore_rect.left));
-        const int ignore_height = static_cast<int>(std::max<LONG>(1, ignore_rect.bottom - ignore_rect.top));
-        for (const auto &page : m_ignorePages) {
-            if (page != nullptr && page->Handle() != nullptr) {
-                ::SetWindowPos(page->Handle(), nullptr, ignore_rect.left, ignore_rect.top,
-                               ignore_width, ignore_height,
-                               SWP_NOZORDER | SWP_NOACTIVATE);
-            }
-        }
+        FitPagesToTab(m_ignoreTabs, m_ignorePages);
     }
+}
+
+void SettingsWindow::ScaleForDpi(UINT old_dpi, UINT new_dpi) {
+    if (old_dpi == new_dpi || m_tabs.m_hWnd == nullptr) {
+        return;
+    }
+    const auto scale = [&](int value) {
+        return MulDiv(value, static_cast<int>(new_dpi), static_cast<int>(old_dpi));
+    };
+
+    LOGFONTW font_info{};
+    if (!CFontHandle(m_tabs.GetFont()).GetLogFont(&font_info)) {
+        return;
+    }
+    font_info.lfHeight = scale(font_info.lfHeight);
+    CFont font;
+    if (font.CreateFontIndirect(&font_info) == nullptr) {
+        return;
+    }
+    m_tabs.SetFont(font, FALSE);
+
+    // Every page's controls, including the ignore tab control and the ignore
+    // pages placed on the ignore page. LayoutPages then fits the pages
+    // themselves exactly.
+    const auto scale_controls = [&](CWindow page) {
+        for (CWindow control = page.GetWindow(GW_CHILD); control.m_hWnd != nullptr;
+             control = control.GetWindow(GW_HWNDNEXT)) {
+            CRect rect;
+            control.GetWindowRect(&rect);
+            page.ScreenToClient(&rect);
+            control.SetWindowPos(nullptr, scale(rect.left), scale(rect.top),
+                                 scale(rect.Width()), scale(rect.Height()),
+                                 SWP_NOZORDER | SWP_NOACTIVATE);
+            control.SetFont(font, FALSE);
+        }
+    };
+    for (const auto &page : m_pages) {
+        scale_controls(page->Window());
+    }
+    for (const auto &page : m_ignorePages) {
+        scale_controls(page->Window());
+    }
+
+    // Keep any widths the user dragged, only in the new DPI.
+    const int column_count = m_pList.GetHeader().GetItemCount();
+    for (int column = 0; column < column_count; ++column) {
+        m_pList.SetColumnWidth(column, scale(m_pList.GetColumnWidth(column)));
+    }
+    if (!m_ignoreImageList.IsNull()) {
+        const int icon_size = ScaleFromDefaultDpi(16, new_dpi);
+        m_ignoreImageList.SetIconSize(icon_size, icon_size);
+        // Re-attach so the list recomputes its row height.
+        CListViewCtrl(m_ignorePages[0]->Control(kIList)).SetImageList(m_ignoreImageList, LVSIL_SMALL);
+    }
+
+    // The controls now use the new font, so the previous one can go.
+    m_dpiFont.Attach(font.Detach());
 }
 
 void SettingsWindow::BindControls() {
@@ -885,8 +938,7 @@ void SettingsWindow::BindControls() {
 }
 
 void SettingsWindow::ConfigureIgnoreList() {
-    const UINT dpi = WindowDpi(CWindow(m_hWnd));
-    const int icon_size = MulDiv(16, static_cast<int>(dpi), USER_DEFAULT_SCREEN_DPI);
+    const int icon_size = ScaleFromDefaultDpi(16, m_dpi);
     if (m_ignoreImageList.IsNull()) {
         m_ignoreImageList.Create(
             icon_size,
@@ -903,7 +955,8 @@ void SettingsWindow::ConfigureIgnoreList() {
         CListViewCtrl list;
         list = m_ignorePages[index]->Control(kIList);
         ConfigureListView(list, index != 0, false);
-        AddListViewColumn(list, 0, 100, L"");
+        // IgnorePage::Refresh widens the single column to the list.
+        AddListViewColumn(list, 0, ScaleFromDefaultDpi(100, m_dpi), L"");
         if (index == 0 && !m_ignoreImageList.IsNull()) {
             list.SetImageList(m_ignoreImageList, LVSIL_SMALL);
         }
@@ -912,9 +965,9 @@ void SettingsWindow::ConfigureIgnoreList() {
 
 void SettingsWindow::ConfigurePinsList() {
     ConfigureListView(m_pList, false, true);
-    AddListViewColumn(m_pList, 0, 63, Localization::Text(IDS_P_KEY).c_str());
-    AddListViewColumn(m_pList, 1, 158, Localization::Text(IDS_P_TITLE).c_str());
-    AddListViewColumn(m_pList, 2, 300, Localization::Text(IDS_P_CONTENT).c_str());
+    AddListViewColumn(m_pList, 0, ScaleFromDefaultDpi(63, m_dpi), Localization::Text(IDS_P_KEY).c_str());
+    AddListViewColumn(m_pList, 1, ScaleFromDefaultDpi(158, m_dpi), Localization::Text(IDS_P_TITLE).c_str());
+    AddListViewColumn(m_pList, 2, ScaleFromDefaultDpi(300, m_dpi), Localization::Text(IDS_P_CONTENT).c_str());
 }
 
 void SettingsWindow::SetPage(int page) {
@@ -932,7 +985,7 @@ void SettingsWindow::SetPage(int page) {
         }
     }
 
-    // 如果切换到忽略页面，需要初始化当前忽略子标签页
+    // The ignore page shows one of its sub-pages; bring the current one up.
     if (m_currentPage == kPageIgnore) {
         SetIgnorePage(m_ignorePage);
     }
@@ -944,12 +997,12 @@ void SettingsWindow::SetIgnorePage(int page) {
         m_ignoreTabs.SetCurSel(m_ignorePage);
     }
 
-    // 隐藏所有子页面
+    // Hide every sub-page...
     for (size_t i = 0; i < m_ignorePageObjects.size(); ++i) {
         m_ignorePageObjects[i].Hide();
     }
 
-    // 显示当前子页面
+    // ...then show the current one.
     m_ignorePageObjects[static_cast<size_t>(m_ignorePage)].Show();
 }
 
@@ -1344,6 +1397,12 @@ LRESULT SettingsWindow::OnInitDialog(UINT, WPARAM, LPARAM, BOOL &handled) {
         SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_FRAMECHANGED
     );
 
+    // Per-Monitor v2 rescales only a dialog's immediate children, but the
+    // pages here are dialogs of their own. OnDpiChanged scales the whole
+    // tree instead, and must be the only one doing it.
+    m_dpi = ::GetDpiForWindow(m_hWnd);
+    ::SetDialogDpiChangeBehavior(m_hWnd, DDC_DISABLE_ALL, DDC_DISABLE_ALL);
+
     CreateTabs();
     if (!CreatePageWindows()) {
         handled = FALSE;
@@ -1356,25 +1415,37 @@ LRESULT SettingsWindow::OnInitDialog(UINT, WPARAM, LPARAM, BOOL &handled) {
     SetUpdateCheckBusy(m_updateCheckBusy);
     SetPage(kPageGeneral);
     SetIgnorePage(0);
+
+    // Settings is modeless, so the main loop must route its keys through
+    // the dialog manager for Tab, Esc, Enter and arrow-key navigation.
+    if (CMessageLoop *loop = _Module.GetMessageLoop(); loop != nullptr) {
+        loop->AddMessageFilter(this);
+    }
     return TRUE;
+}
+
+BOOL SettingsWindow::PreTranslateMessage(MSG *message) {
+    // IsDialogMessage ignores messages for windows outside this dialog, so
+    // the history popup keeps its own keyboard handling.
+    return m_hWnd != nullptr && IsDialogMessage(message);
 }
 
 LRESULT SettingsWindow::OnDpiChanged(UINT, WPARAM wParam, LPARAM lParam, BOOL &handled) {
     handled = TRUE;
+    const UINT dpi = LOWORD(wParam);
+    // Scale the controls before resizing the window: the resize lays the
+    // tab controls and pages out, and that must use the new tab metrics.
+    ScaleForDpi(m_dpi, dpi);
+    m_dpi = dpi;
     const auto *suggested = reinterpret_cast<const RECT *>(lParam);
     if (suggested != nullptr) {
-        SetWindowPos(nullptr, suggested->left, suggested->top,
-                     suggested->right - suggested->left,
-                     suggested->bottom - suggested->top,
-                     SWP_NOZORDER | SWP_NOACTIVATE);
+        SetWindowPos(nullptr, suggested, SWP_NOZORDER | SWP_NOACTIVATE);
     }
-
     LayoutPages();
-    ConfigureIgnoreList();
-    ConfigurePinsList();
     if (m_currentPage == kPageIgnore) {
         m_ignorePageObjects[static_cast<size_t>(m_ignorePage)].Refresh();
     }
+    RedrawWindow(nullptr, nullptr, RDW_INVALIDATE | RDW_ERASE | RDW_ALLCHILDREN);
     return 0;
 }
 
@@ -1392,6 +1463,13 @@ LRESULT SettingsWindow::OnClose(UINT, WPARAM, LPARAM, BOOL &handled) {
     } else {
         DestroyWindow();
     }
+    return 0;
+}
+
+LRESULT SettingsWindow::OnCancelCommand(WORD, WORD, HWND, BOOL &handled) {
+    // The dialog manager turns Esc into IDCANCEL.
+    handled = TRUE;
+    SendMessage(WM_CLOSE);
     return 0;
 }
 
@@ -1529,6 +1607,9 @@ LRESULT SettingsWindow::OnPinsListKeyDown(int, LPNMHDR header, BOOL &handled) {
 
 LRESULT SettingsWindow::OnDestroy(UINT, WPARAM, LPARAM, BOOL &handled) {
     handled = TRUE;
+    if (CMessageLoop *loop = _Module.GetMessageLoop(); loop != nullptr) {
+        loop->RemoveMessageFilter(this);
+    }
     if (m_windowIcon) {
         SetIcon(nullptr, TRUE);
         SetIcon(nullptr, FALSE);
