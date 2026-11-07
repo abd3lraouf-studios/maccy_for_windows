@@ -1,19 +1,19 @@
-# 第三方内容说明
+# Third-Party Notices
 
-本目录记录随源码或二进制发行包分发的第三方代码、图标和视觉资源。各组件仍受其原始许可证约束。
+This folder records the third-party code, icons, and visual assets distributed with the source code or the binary release package. Each component remains subject to its original license.
 
-## Maccy 视觉资源
+## Maccy visual assets
 
-- 来源项目：[p0deje/Maccy](https://github.com/p0deje/Maccy)
-- 许可证：MIT License
-- 版权声明：`Copyright (c) 2025 Alex Rodionov`
-- 完整文本：[`Maccy-LICENSE.txt`](Maccy-LICENSE.txt)
+- Source project: [p0deje/Maccy](https://github.com/p0deje/Maccy)
+- License: MIT License
+- Copyright notice: `Copyright (c) 2025 Alex Rodionov`
+- Full text: [`Maccy-LICENSE.txt`](Maccy-LICENSE.txt)
 
-本项目不是 Maccy 官方 Windows 版本，也不获得 Maccy 商标或品牌授权。分发源码或二进制文件时，请保留上述归属说明。
+This project is not the official Windows version of Maccy and has no Maccy trademark or brand authorization. Keep the attribution above when distributing the source code or binaries.
 
-## 构建依赖许可证
+## Build dependency licenses
 
-WTL、SQLite、Boost.Beast、Boost.JSON、Boost.Locale、OpenSSL 及其传递依赖的许可证和版权声明随二进制发行包提供，可在以下文件中查阅：
+The licenses and copyright notices of WTL, SQLite, Boost.Beast, Boost.JSON, Boost.Locale, OpenSSL, and their transitive dependencies are shipped with the binary release package and can be found in these files:
 
 - `licenses/boost-beast/copyright`
 - `licenses/boost-json/copyright`

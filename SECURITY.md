@@ -1,52 +1,54 @@
-# 安全政策
+# Security Policy
 
-本项目处理的是用户剪贴板内容。剪贴板正文、图片、文件路径、窗口来源和数据库文件都应按敏感数据处理。
+This project handles users' clipboard contents. Clipboard text, images, file paths, source windows, and database files must all be treated as sensitive data.
 
-## 支持范围
+## Supported versions
 
-除非发布说明另有规定，项目优先处理：
+Unless the release notes say otherwise, the project gives priority to:
 
-- 最新发布版本；
-- 当前主分支中的安全问题；
-- 仍然可以在干净环境中复现的问题。
+- the latest released version;
+- security issues in the current main branch;
+- issues that can still be reproduced in a clean environment.
 
-旧版本可能不会获得单独修复。
+Older versions may not receive separate fixes.
 
-## 报告漏洞
+## Reporting a vulnerability
 
-请不要通过公开 Issue、Pull Request、Discussion 或聊天公开报告安全漏洞。
+Do not report security vulnerabilities publicly through pull requests, discussions, or chat.
 
-优先使用 GitHub 的私密漏洞报告入口：
+Report them privately through GitHub Security Advisories on this fork:
 
-[报告安全漏洞](https://github.com/halifox/maccy_for_windows/security/advisories/new)
+[Report a security vulnerability](https://github.com/abd3lraouf-studios/maccy_for_windows/security/advisories/new)
 
-报告内容建议包括：
+You can also use the **Report a vulnerability** button on the repository's [Security](https://github.com/abd3lraouf-studios/maccy_for_windows/security) tab.
 
-- 受影响的版本或 commit；
-- 漏洞影响；
-- 最小复现步骤；
-- 必要的示例输入；
-- 临时缓解措施；
-- 是否希望公开署名。
+A report should ideally include:
 
-不要上传真实的剪贴板数据库、密码、令牌、个人文件或其他敏感数据。
+- the affected version or commit;
+- the impact of the vulnerability;
+- minimal reproduction steps;
+- any sample input that is needed;
+- temporary mitigations;
+- whether you want public credit.
 
-## 本地数据处理
+Do not upload real clipboard databases, passwords, tokens, personal files, or other sensitive data.
 
-当前应用将历史和设置保存在当前 Windows 用户的本地应用数据目录：
+## Local data handling
+
+The app stores history and settings in the current Windows user's local application data folder:
 
 ```text
 %LOCALAPPDATA%\maccy\maccy.db
 ```
 
-SQLite 的 `maccy.db-wal` 和 `maccy.db-shm` 也可能存在。当前项目没有应用层数据库加密、遥测上传或后台自动下载安装功能。删除记录用于应用功能，不应被理解为安全擦除；需要清理敏感数据时，应退出应用后删除数据库及其 WAL 文件。
+SQLite's `maccy.db-wal` and `maccy.db-shm` may also exist. The same folder holds the cached notification thumbnail and source-app icons (`notification-images`, `notification-icons`, `notification-icon.png`). The project currently has no application-level database encryption, no telemetry upload, and no background auto-download or auto-install feature. Deleting records is an app feature and must not be understood as a secure wipe; to clean up sensitive data, exit the app and then delete the database and its WAL files.
 
-贡献、Issue 和 Pull Request 中不得包含真实剪贴板内容。请使用合成文本、合成图片和脱敏路径复现问题。
+Contributions and pull requests must not contain real clipboard contents. Reproduce problems with synthetic text, synthetic images, and redacted paths.
 
-如果私密漏洞报告入口不可用，请先通过仓库维护者 [GitHub 个人主页](https://github.com/halifox) 提供的私下联系方式联系，不要在公开 Issue 中披露漏洞细节。
+If the private vulnerability reporting form is unavailable, contact the maintainers of [abd3lraouf-studios](https://github.com/abd3lraouf-studios) privately first, and do not disclose vulnerability details publicly.
 
-## 处理方式
+## How reports are handled
 
-维护者会先确认报告是否属于安全问题，再评估影响范围、修复方案和发布时机。
+The maintainers first confirm whether the report is a security issue, then assess its impact, the fix, and the release timing.
 
-在修复或公开说明之前，请不要向第三方传播漏洞细节。维护者会在适当情况下感谢报告者，并在获得同意后公开署名。
+Do not share vulnerability details with third parties before a fix or public statement. The maintainers will thank reporters where appropriate and give public credit with their consent.

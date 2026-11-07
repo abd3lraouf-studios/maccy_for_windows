@@ -226,7 +226,7 @@
 * updated tray menu text labels ([923e757](https://github.com/halifox/maccy_for_windows/commit/923e757ed10d88d57d6b265dd9fcf58562653d3a))
 * updated UI layout and controls ([89c5ff0](https://github.com/halifox/maccy_for_windows/commit/89c5ff021efb4172ec91c98f33f3da1c08463db7))
 * updated User-Agent string in UpdateChecker ([1053753](https://github.com/halifox/maccy_for_windows/commit/10537530139a8b3c7c27a2ce6dcb0c1ad92c240e))
-* 防止应用重复启动多个实例 ([d80e6bb](https://github.com/halifox/maccy_for_windows/commit/d80e6bbec368fa15b31a937692cbc92c5391589b))
+* prevent the app from starting multiple instances ([d80e6bb](https://github.com/halifox/maccy_for_windows/commit/d80e6bbec368fa15b31a937692cbc92c5391589b))
 
 
 ### Performance Improvements
@@ -249,7 +249,7 @@
 * **release-test:** exercise patch release ([bc276e2](https://github.com/halifox/maccy_for_windows/commit/bc276e2c3ff713689b03e352f482f20566ebf427))
 * **release-test:** exercise patch release ([704a75f](https://github.com/halifox/maccy_for_windows/commit/704a75f3ac6003830a9905345f10dd10ef8ba8ee))
 
-## 变更记录
+## Change log
 
 ## Unreleased
 

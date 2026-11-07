@@ -1,43 +1,44 @@
-# 发布检查清单
+# Release Checklist
 
-本文档用于维护者核对自动发布结果和安装行为。正式发布目标是 Windows x64；自动化构建成功不能代替干净环境中的安装与运行验证。
+This document is for maintainers to check the results of the automated release and the installer's behavior. The official release target is Windows x64; a successful automated build does not replace install-and-run verification in a clean environment.
 
-## 发布前
+## Before the release
 
-- [ ] 工作树干净，未包含数据库、真实剪贴板内容、调试符号或本地 IDE 配置。
-- [ ] 仓库名称、应用名称、更新页面和所有安全报告链接一致。
-- [ ] `version.txt`、Git tag、CMake 项目版本和应用 About 版本一致。
-- [ ] 已阅读本次版本涉及的数据库、持久化和第三方许可证变化。
-- [ ] 已更新 README、SECURITY、PRIVACY 和 CHANGELOG/Release notes。
-- [ ] 已确认本次 Release 的已知限制和数据影响。
+- [ ] The working tree is clean and contains no databases, real clipboard contents, debug symbols, or local IDE configuration.
+- [ ] The repository name, app name, update page, and every security reporting link are consistent and point to this fork (`abd3lraouf-studios/maccy_for_windows`).
+- [ ] `version.txt`, the Git tag, the CMake project version, and the version in the app's About page match.
+- [ ] Database, persistence, and third-party license changes in this release have been reviewed.
+- [ ] README, SECURITY, PRIVACY, and CHANGELOG/release notes are updated.
+- [ ] The release's known limitations and data impact are confirmed.
 
-## 构建和测试
+## Build and test
 
-- [ ] GitHub Actions 的 x64/x86 Debug 和 Release CI 检查通过。
-- [ ] Release 工作流的 Windows x64 Release 构建成功，没有把 Debug 目录当作发行包。
-- [ ] Release 工作流的 `ctest --output-on-failure` 完成，并记录测试数量和结果。
-- [ ] 在干净用户目录启动程序，验证托盘、打开窗口、退出和开机启动。
-- [ ] 验证文本、图片、文件路径、长文本和快速连续复制。
-- [ ] 验证搜索、正则、模糊、固定、删除、清空和容量限制。
-- [ ] 验证重启后的历史、设置和数据库文件。
-- [ ] 验证高 DPI、多显示器、窗口位置和系统主题。
-- [ ] 验证数据库占用、权限不足和异常退出时的错误处理。
+- [ ] The GitHub Actions x64/x86 Debug and Release CI checks pass.
+- [ ] The release workflow's Windows x64 Release build succeeds and does not ship a Debug folder as the release package.
+- [ ] The release workflow's `ctest --output-on-failure` completes, and the number of tests and their results are recorded.
+- [ ] Start the program with a clean user folder and verify the tray, opening the window, exiting, and launch at sign-in.
+- [ ] Verify text, images, file paths, long text, and rapid consecutive copies.
+- [ ] Verify the copy notification: source app icon and name, text snippet, image thumbnail, and that turning Maccy off in Settings > System > Notifications silences it.
+- [ ] Verify search, regex, fuzzy, pinning, deletion, clearing, and the capacity limit.
+- [ ] Verify history, settings, and database files after a restart.
+- [ ] Verify high DPI, multiple monitors, window position, and the system theme.
+- [ ] Verify error handling when the database is locked, permissions are insufficient, or the app exits abnormally.
 
-## 安装包
+## Installer
 
-- [ ] 生成 NSIS 安装包。
-- [ ] 在未安装开发环境的干净 Windows 环境测试安装、启动、升级和卸载。
-- [ ] 安装包包含项目 `LICENSE`、README、安全说明和全部第三方说明。
-- [ ] 安装包只包含 Release 二进制和合法可再分发的运行库。
-- [ ] 检查可执行文件架构、文件版本、图标和安装目录。
-- [ ] 生成 `SHA256SUMS.txt`。
-- [ ] 如果提供签名，验证 Authenticode 签名和时间戳。
+- [ ] The NSIS installer is generated.
+- [ ] Test install, launch, upgrade, and uninstall on a clean Windows environment without any development tools.
+- [ ] The installer contains the project `LICENSE`, the README, the security notes, and all third-party notices.
+- [ ] The installer contains only Release binaries and runtime libraries that may legally be redistributed.
+- [ ] Check the executable's architecture, file version, icon, and installation folder.
+- [ ] `SHA256SUMS.txt` is generated.
+- [ ] If the build is signed, verify the Authenticode signature and timestamp.
 
 ## GitHub Release
 
-- [ ] Release Please 已创建 `vX.Y.Z` Tag 和草稿 Release。
-- [ ] tag 使用 `vX.Y.Z`，并与构建配置中的版本完全一致。
-- [ ] Release notes 写明新功能、修复、已知问题、兼容性和数据影响。
-- [ ] Release 工作流已上传 NSIS 安装包和 `SHA256SUMS.txt`，并在上传成功后发布 Release。
-- [ ] 从 Release 页面重新下载资产并再次核对校验和。
-- [ ] 发布后再验证 README 和应用内更新入口指向当前仓库。
+- [ ] Release Please has created the `vX.Y.Z` tag and a draft release.
+- [ ] The tag uses `vX.Y.Z` and matches the version in the build configuration exactly.
+- [ ] The release notes describe new features, fixes, known issues, compatibility, and data impact.
+- [ ] The release workflow has uploaded the NSIS installer and `SHA256SUMS.txt`, and published the release after the upload succeeded.
+- [ ] Download the assets again from the release page and re-check the checksums.
+- [ ] After publishing, verify again that the README and the in-app update check point to this repository.
