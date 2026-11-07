@@ -1,60 +1,80 @@
-# 隐私和数据说明
+# Privacy and Data
 
-Maccy for Windows 是本地剪贴板历史工具。它需要读取 Windows 剪贴板，才能提供历史记录、搜索和粘贴功能。
+Maccy for Windows is a local clipboard history tool. It has to read the Windows clipboard to provide history, search, and paste.
 
-## 保存的数据
+## Data that is saved
 
-根据设置和剪贴板内容，应用可能保存：
+Depending on the settings and the clipboard contents, the app may save:
 
-- 文本正文和文本格式；
-- 图片数据；
-- 文件拖放列表中的路径；
-- 剪贴板格式名称和原始格式数据；
-- 复制时间、复制次数和来源应用程序信息；
-- 固定项目、忽略规则和应用设置。
+- text bodies and text formats;
+- image data;
+- paths from file drop lists;
+- clipboard format names and raw format data;
+- the copy time, the copy count, and information about the source application;
+- pinned items, ignore rules, and app settings.
 
-应用默认使用以下路径：
+By default the app uses this path:
 
 ```text
 %LOCALAPPDATA%\maccy\maccy.db
 ```
 
-SQLite WAL 模式可能额外产生：
+SQLite WAL mode may additionally create:
 
 ```text
 %LOCALAPPDATA%\maccy\maccy.db-wal
 %LOCALAPPDATA%\maccy\maccy.db-shm
 ```
 
-## 网络行为
+## Copy notifications
 
-应用不包含遥测、剪贴板上传、云同步或后台自动下载安装服务。手动检查更新，或启用“自动检查更新”后在启动时检查更新时，应用会通过 HTTPS 请求项目的 GitHub Releases API，只发送应用版本和系统网络请求所需的连接信息，不发送剪贴板内容、历史记录或数据库数据。发现新版本后，应用只在用户确认后打开 GitHub Releases 页面，不会自动下载或替换程序。
+On every captured copy, Maccy shows a Windows notification with the source app's icon and name and a short snippet of the copied text, or a thumbnail when the copy is an image. The notification is shown locally by Windows; nothing is sent over the network. Each new copy replaces the previous notification.
 
-## 安全边界
+To build these notifications, Maccy writes the following files:
 
-当前数据库没有应用层加密。能够读取当前 Windows 用户本地数据的进程，可能读取剪贴板历史。因此不应把本程序当作密码管理器或安全保管库。
+```text
+%LOCALAPPDATA%\maccy\notification-images\   (the most recent image thumbnail)
+%LOCALAPPDATA%\maccy\notification-icons\    (cached icons of source applications)
+%LOCALAPPDATA%\maccy\notification-icon.png  (Maccy's own notification icon)
+```
 
-建议：
+The notification registration is stored in the registry under:
 
-- 对密码、令牌和其他敏感内容配置忽略规则；
-- 开启 Windows 账户和磁盘保护；
-- 不要把数据库、WAL 文件或真实剪贴板内容上传到 Issue；
-- 分享日志和截图前删除路径、正文、账号和个人信息。
+```text
+HKCU\Software\Classes\AppUserModelId\Maccy.ClipboardHistory
+```
 
-## 删除和卸载
+Windows Settings > System > Notifications > Maccy turns these notifications, or their sound, off.
 
-应用中的删除、清空和退出时清空用于控制正常使用中的历史记录。它们不承诺对磁盘执行取证意义上的安全擦除，尤其是在 SQLite WAL 文件仍存在时。
+## Network behavior
 
-卸载程序默认保留本地数据。若要在卸载时删除剪贴板历史、固定项目、忽略规则、设置以及 WAL/SHM 文件，请勾选卸载页上的数据删除选项。数据位于 `%LOCALAPPDATA%\maccy`；删除不可撤销，也不承诺取证意义上的安全擦除。
+The app contains no telemetry, no clipboard upload, no cloud sync, and no background auto-download or auto-install service. When you check for updates manually, or when "Check for updates automatically" is enabled and the app checks at startup, the app requests the GitHub Releases API of this fork (`abd3lraouf-studios/maccy_for_windows`) over HTTPS. It sends only the app version and the connection information that any network request requires; it never sends clipboard contents, history, or database data. When a new version is found, the app opens the GitHub Releases page only after you confirm, and never downloads or replaces the program on its own.
 
-需要手动清理本地数据时：
+## Security boundaries
 
-1. 退出应用，确认托盘图标已经消失；
-2. 删除 `maccy.db`、`maccy.db-wal` 和 `maccy.db-shm`；
-3. 如果启用了开机启动，应用卸载时会移除当前 Windows 用户的登录启动项；保留数据或仅手动删除数据库时，不会清理该启动项。
+The database currently has no application-level encryption. Any process that can read the current Windows user's local data may be able to read the clipboard history. Do not treat this program as a password manager or a secure vault.
 
-卸载应用或删除数据库前，请先备份需要保留的历史记录。
+Recommendations:
 
-## 安全问题
+- configure ignore rules for passwords, tokens, and other sensitive content;
+- turn on Windows account and disk protection;
+- never upload the database, WAL files, or real clipboard contents anywhere public;
+- remove paths, text bodies, account names, and personal information before sharing logs and screenshots.
 
-不要公开披露安全漏洞。请按照 [SECURITY.md](SECURITY.md) 中的私密报告流程联系维护者。
+## Deletion and uninstallation
+
+Delete, Clear, and Clear on exit in the app control the history during normal use. They do not promise a forensically secure wipe of the disk, especially while SQLite WAL files still exist.
+
+By default the uninstaller keeps local data. To delete the clipboard history, pinned items, ignore rules, settings, the WAL/SHM files, and the cached notification images and icons when uninstalling, tick the data deletion option on the uninstall page. The data lives in `%LOCALAPPDATA%\maccy`; deletion cannot be undone and does not promise a forensically secure wipe. The uninstaller always removes the notification registration under `HKCU\Software\Classes\AppUserModelId\Maccy.ClipboardHistory`, whether or not the data is kept.
+
+To clean up local data by hand:
+
+1. Exit the app and make sure the tray icon is gone;
+2. Delete `maccy.db`, `maccy.db-wal`, and `maccy.db-shm`, and, if you want, the `notification-images` and `notification-icons` folders and `notification-icon.png`;
+3. If launch at sign-in is enabled, uninstalling the app removes the current Windows user's sign-in startup entry; keeping the data or only deleting the database by hand does not remove that entry.
+
+Back up any history you want to keep before uninstalling the app or deleting the database.
+
+## Security issues
+
+Do not disclose security vulnerabilities publicly. Contact the maintainers through the private reporting process in [SECURITY.md](SECURITY.md).

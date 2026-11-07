@@ -1,70 +1,70 @@
-# 贡献指南
+# Contributing Guide
 
-感谢你对 Maccy for Windows 的关注。
+Thank you for your interest in Maccy for Windows.
 
-本项目是一个独立的 Windows 剪贴板历史工具，受到 macOS 版 Maccy 启发，但不是 Maccy 官方 Windows 版本，也不代表 Maccy 官方项目。
+This project is an independent clipboard history tool for Windows. It is inspired by Maccy for macOS, but it is not the official Windows version of Maccy and does not represent the official Maccy project. This repository is a fork of [halifox/maccy_for_windows](https://github.com/halifox/maccy_for_windows).
 
-## 开始之前
+## Before you start
 
-提交 Issue 或 Pull Request 之前，请先：
+Before opening a pull request:
 
-1. 搜索已有 Issue，避免重复报告。
-2. 阅读项目的 README、LICENSE 和 SECURITY.md。
-3. 不要在公开内容中粘贴真实的剪贴板历史、密码、令牌、个人文件路径或数据库文件。
-4. 如果变更涉及数据结构、线程模型、窗口生命周期、剪贴板行为或用户数据格式，建议先提交 Issue 讨论方案。
+1. Search existing pull requests to avoid duplicate work.
+2. Read the project's README, LICENSE, and SECURITY.md.
+3. Never paste real clipboard history, passwords, tokens, personal file paths, or database files into anything public.
+4. If the change touches data structures, the threading model, window lifecycles, clipboard behavior, or the user data format, consider opening a draft pull request that describes the approach before investing in the full change.
 
-安全漏洞请按照 SECURITY.md 报告，不要公开提交。
+Report security vulnerabilities as described in SECURITY.md; never submit them publicly.
 
-## 可以贡献的内容
+## What you can contribute
 
-欢迎以下类型的贡献：
+These kinds of contributions are welcome:
 
-- 可稳定复现的错误修复；
-- 构建、测试和调试流程改进；
-- 剪贴板、搜索、数据库、预览和托盘行为改进；
-- 性能、内存占用和稳定性改进；
-- 文档、错误提示和本地化改进；
-- 有明确使用场景且范围清晰的新功能；
-- 不包含敏感数据的复现工具和测试用例。
+- fixes for reliably reproducible bugs;
+- improvements to the build, test, and debugging workflow;
+- improvements to clipboard, search, database, preview, and tray behavior;
+- improvements to performance, memory usage, and stability;
+- improvements to documentation and error messages;
+- new features with a clear use case and a well-defined scope;
+- reproduction tools and test cases that contain no sensitive data.
 
-贡献应尽量保持单一目的。请避免在同一个 Pull Request 中混入无关的重命名、格式化、目录调整或临时代码清理。
+Keep each contribution to a single purpose where possible. Do not mix unrelated renames, formatting, folder reorganization, or incidental code cleanup into the same pull request.
 
-## Issue 要求
+## Bug reports
 
-错误报告应尽可能包含：
+When a pull request fixes a bug, its description should include as much of the following as possible:
 
-- 应用版本或 Git commit；
-- Windows 版本和系统架构；
-- 使用安装包还是本地编译版本；
-- 清晰的复现步骤；
-- 实际结果和预期结果；
-- 复现频率；
-- 必要时提供经过脱敏的日志、截图或录屏；
-- 如果问题与剪贴板、搜索、数据库或设置有关，请说明相关配置。
+- the app version or Git commit;
+- the Windows version and system architecture;
+- whether you used the installer or a local build;
+- clear reproduction steps;
+- the actual and expected results;
+- how often it reproduces;
+- redacted logs, screenshots, or screen recordings where needed;
+- the relevant configuration, if the problem involves the clipboard, search, the database, or settings.
 
-提交前请删除：
+Before submitting, remove:
 
-- 剪贴板正文；
-- 密码、令牌和密钥；
-- 真实文件内容；
-- 真实用户目录；
-- 未脱敏的数据库文件；
-- 包含个人信息的截图和日志。
+- clipboard text;
+- passwords, tokens, and keys;
+- real file contents;
+- real user folders;
+- unredacted database files;
+- screenshots and logs that contain personal information.
 
-## 开发环境
+## Development environment
 
-项目当前使用：
+The project currently uses:
 
-- Windows；
-- CMake 3.25 或更高版本；
-- C++20；
-- Visual Studio C++ 工具链；
-- WTL；
-- SQLite；
-- vcpkg；
-- Ninja 或其他可用的 CMake 构建器。
+- Windows;
+- CMake 3.25 or later;
+- C++20;
+- the Visual Studio C++ toolchain (Visual Studio 2022 or 2026, or their Build Tools, with the C++ workload and the ATL component, which WTL needs);
+- WTL;
+- SQLite;
+- vcpkg (the vcpkg bundled with Visual Studio works);
+- Ninja or another available CMake generator.
 
-推荐在 Windows 的 Visual Studio Developer PowerShell 中设置 `VCPKG_ROOT`，再使用仓库提供的 CMake Preset：
+The recommended setup is to set `VCPKG_ROOT` in a Visual Studio Developer PowerShell on Windows and then use the CMake presets in the repository:
 
 ```powershell
 $env:VCPKG_ROOT = 'C:/path/to/vcpkg'
@@ -73,7 +73,7 @@ cmake --build --preset windows-x64-debug
 ctest --preset windows-x64-debug --output-on-failure
 ```
 
-Release 构建和打包验证：
+Release build and packaging check:
 
 ```powershell
 cmake --preset windows-x64-release
@@ -82,114 +82,114 @@ ctest --preset windows-x64-release --output-on-failure
 cpack --config .\build\windows-x64-release-vcpkg\CPackConfig.cmake -G NSIS
 ```
 
-首次配置会根据根目录的 `vcpkg.json` 安装 WTL 和启用了 FTS5 的 SQLite。Preset 使用 `x64-windows-static-md` triplet，并将构建文件写入独立的 `build/<preset>-vcpkg` 目录。
+The first configure installs WTL, SQLite with FTS5 enabled, and the other dependencies listed in `vcpkg.json` at the repository root. The presets use the `x64-windows-static-md` triplet and write build files to a separate `build/<preset>-vcpkg` folder.
 
-如果使用其他 CMake 生成器、Visual Studio 版本、配置或架构，请在 Pull Request 中说明。发布版本必须使用干净的 Release 构建目录，不得直接分发 Debug 构建结果。
+If you use a different CMake generator, Visual Studio version, configuration, or architecture, say so in the pull request. Release builds must use a clean Release build folder; never distribute Debug build output.
 
-不要提交构建目录、生成的可执行文件、调试符号、安装包、数据库文件或本地配置文件。仓库的 `.gitignore` 已覆盖常见输出，但提交前仍需检查 `git status`。
+Do not commit build folders, generated executables, debug symbols, installers, database files, or local configuration files. The repository's `.gitignore` covers the common outputs, but still check `git status` before committing.
 
-## 测试
+## Testing
 
-当前项目没有完整的自动化 CTest 测试套件。修改后至少应完成与变更相关的手动验证。
+The project does not currently have a complete automated CTest suite. After a change, at least do the manual verification relevant to it.
 
-CTest 当前主要验证构建流程；在新增测试之前，`ctest` 通过不代表剪贴板、数据库或窗口生命周期已经得到完整覆盖。
+CTest currently mainly verifies the build; until more tests are added, a passing `ctest` does not mean the clipboard, the database, or window lifecycles are fully covered.
 
-涉及以下内容时，应额外验证：
+Verify these areas in addition when a change touches them:
 
-- 托盘图标和窗口关闭行为；
-- 全局快捷键；
-- 搜索、筛选和排序；
-- 固定、删除、清空和容量限制；
-- 文本、图片和文件剪贴板格式；
-- 重启后的历史和设置持久化；
-- 高 DPI 和不同窗口位置；
-- 长文本、大图片和快速连续复制；
-- 数据库错误或占用时的错误处理。
+- the tray icon and window close behavior;
+- the global shortcut;
+- search, filtering, and sorting;
+- pinning, deletion, clearing, and the capacity limit;
+- text, image, and file clipboard formats;
+- persistence of history and settings across restarts;
+- high DPI and different window positions;
+- long text, large images, and rapid consecutive copies;
+- error handling when the database fails or is locked.
 
-## 代码和架构约定
+## Code and architecture conventions
 
-- 使用 C++20 和项目现有的命名、所有权和错误处理风格。
-- 固定对话框布局、静态控件文本和菜单优先放在 `.rc` 资源中；运行时状态和动态布局放在 C++ 中。
-- UI 线程不应执行不可预测的数据库、BLOB 或重型预览工作。
-- SQLite 写入应通过现有的存储工作线程和事务模型完成。
-- 不要绕过 StorageWorker 直接从多个线程共享 SQLite 连接。
-- 修改历史数据时，应同时维护格式数据、搜索索引、固定状态和删除规则的一致性。
-- 只有在确实需要时才加载剪贴板 BLOB，避免无意义地读取大对象。
-- 异步搜索和预览必须正确处理取消、过期结果和窗口销毁。
-- 窗口隐藏、托盘驻留和显式退出是不同的生命周期行为，不要混为一谈。
-- 不要通过复制逻辑、临时开关、死代码或特殊分支掩盖根因。
-- 如果变更数据库结构、持久化格式或升级行为，应在 Pull Request 中明确说明兼容性和数据影响。
+- Use C++20 and the project's existing naming, ownership, and error handling style.
+- Prefer putting fixed dialog layouts, static control text, and menus in `.rc` resources; keep runtime state and dynamic layout in C++.
+- The UI thread must not do unpredictable database, BLOB, or heavy preview work.
+- SQLite writes must go through the existing storage worker thread and transaction model.
+- Do not bypass StorageWorker to share a SQLite connection directly across threads.
+- When changing history data, keep format data, the search index, pin state, and deletion rules consistent.
+- Load clipboard BLOBs only when actually needed; avoid reading large objects for no reason.
+- Asynchronous search and preview must correctly handle cancellation, stale results, and window destruction.
+- Hiding the window, staying in the tray, and explicitly exiting are different lifecycle behaviors; do not conflate them.
+- Do not mask a root cause with duplicated logic, temporary switches, dead code, or special-case branches.
+- If a change alters the database schema, the persistence format, or upgrade behavior, state the compatibility and data impact explicitly in the pull request.
 
-## 第三方代码和资源
+## Third-party code and assets
 
-不得提交来源不明或许可证不兼容的代码、字体、图像、图标或其他资源。
+Do not submit code, fonts, images, icons, or other assets of unknown origin or with an incompatible license.
 
-新增第三方内容时，请同时说明：
+When adding third-party content, also state:
 
-- 来源；
-- 版本或 commit；
-- 原始许可证；
-- 是否需要保留版权声明；
-- 是否需要更新 THIRD_PARTY_NOTICES。
+- its source;
+- its version or commit;
+- its original license;
+- whether its copyright notice must be kept;
+- whether THIRD_PARTY_NOTICES needs to be updated.
 
-不得暗示本项目获得 Maccy 官方商标、Logo 或项目授权。
+Do not imply that this project has official authorization for the Maccy trademark, logo, or project.
 
-## Pull Request
+## Pull requests
 
-Pull Request 应包含：
+A pull request should include:
 
-- 变更目的；
-- 实现方式；
-- 影响范围；
-- 潜在风险；
-- 已完成的构建和测试；
-- UI 变更的截图或录屏；
-- 数据库、存储或迁移变更的说明；
-- 第三方内容和许可证变更说明。
+- the purpose of the change;
+- how it is implemented;
+- the scope of its impact;
+- potential risks;
+- the builds and tests that were run;
+- screenshots or screen recordings for UI changes;
+- a description of database, storage, or migration changes;
+- a description of third-party content and license changes.
 
-PR 标题和 PR 中每个提交的标题都必须使用 Conventional Commits 格式。由维护者审查提交格式；合并时请使用 squash，并保留符合格式的 PR 标题作为 squash 提交标题。
+The PR title and the title of every commit in the PR must follow the Conventional Commits format. Maintainers review the commit format; merge with squash and keep the conforming PR title as the squash commit title.
 
-提交 Pull Request 不代表一定会被合并。维护者可能要求缩小范围、重写实现、补充测试，或因项目方向不符而关闭变更。
+Opening a pull request does not guarantee that it will be merged. Maintainers may ask you to narrow the scope, rewrite the implementation, or add tests, or may close the change if it does not fit the project's direction.
 
-## 自动发布和提交信息
+## Automated releases and commit messages
 
-发布版本由 Release Please 管理。PR 合并到 `master` 后，只有 `feat`、`fix` 或带破坏性变更标记的提交会产生版本更新 PR：
+Releases are managed by Release Please. After a PR is merged into `master`, only `feat`, `fix`, or commits with a breaking-change marker produce a release PR:
 
-| 提交类型 | 版本变化 | 示例 |
+| Commit type | Version change | Example |
 | --- | --- | --- |
 | `fix` | Patch | `fix(search): correct empty-result recovery` |
 | `feat` | Minor | `feat(search): add history filters` |
-| 任意类型的 `!` 或 `BREAKING CHANGE:` footer | Major | `feat!: replace the storage format` |
-| `docs`、`ci`、`chore`、`build`、`test`、`refactor`、`style`、`perf` | 不单独发版 | `docs(guide): clarify setup` |
+| `!` on any type, or a `BREAKING CHANGE:` footer | Major | `feat!: replace the storage format` |
+| `docs`, `ci`, `chore`, `build`, `test`, `refactor`, `style`, `perf` | No release of their own | `docs(guide): clarify setup` |
 
-普通 PR 的标题和每个提交标题都需要遵循该格式。破坏性变更可在类型后使用 `!`，或在提交正文中添加 `BREAKING CHANGE: ...`。不要把 `BREAKING CHANGE:` 加到只包含文档、CI 或维护工作的提交中，除非该变更确实影响用户兼容性。
+Regular PR titles and every commit title must follow this format. Mark a breaking change with `!` after the type, or add `BREAKING CHANGE: ...` to the commit body. Do not add `BREAKING CHANGE:` to commits that only contain documentation, CI, or maintenance work, unless the change really affects user compatibility.
 
-Release Please 在 `master` 上更新 `version.txt`、`vcpkg.json` 和 `CHANGELOG.md`，并创建版本 PR，由维护者审查合并。PR 不再运行 Windows CI；构建和测试由发布工作流执行。合并后 Release Please 创建 `vX.Y.Z` Tag 和草稿 Release，并直接调用可复用的 `build.yml` 构建、测试、生成 x64 NSIS 安装器和 SHA-256 文件；校验资产上传完成后才发布 Release。构建失败时可手动运行 Windows 发布工作流并填写已有草稿 Release 的 Tag 重试；留空则仅构建并上传安装包和校验文件作为 Actions artifact，不发布 Release。文档、CI 或维护类提交不会单独创建版本 PR。
+Release Please updates `version.txt`, `vcpkg.json`, and `CHANGELOG.md` on `master` and opens a release PR for the maintainers to review and merge. PRs no longer run Windows CI; builds and tests run in the release workflow. After the merge, Release Please creates the `vX.Y.Z` tag and a draft release, and directly calls the reusable `build.yml` to build, test, and produce the x64 NSIS installer and the SHA-256 file; the release is published only after the checksummed assets have been uploaded. If the build fails, you can run the Windows release workflow manually and enter the tag of the existing draft release to retry; leaving it empty only builds and uploads the installer and checksum file as an Actions artifact, without publishing a release. Documentation, CI, or maintenance commits do not create a release PR on their own.
 
-发布使用仓库自带的 `GITHUB_TOKEN`，无需配置 PAT。维护者需在 Settings → Actions → General 中允许 GitHub Actions 创建 Pull Request。若分支保护或 Ruleset 仍要求 `Conventional Commits`、`Debug x64`、`Release x64`、`Debug x86`、`Release x86`，需移除这些已停用的必需检查。Dependabot 每周检查 GitHub Actions 更新，最多同时打开 10 个 PR。
+Releases use the repository's built-in `GITHUB_TOKEN`; no PAT is needed. Maintainers must allow GitHub Actions to create pull requests in Settings → Actions → General. If branch protection or a ruleset still requires `Conventional Commits`, `Debug x64`, `Release x64`, `Debug x86`, or `Release x86`, remove these retired required checks. Dependabot checks for GitHub Actions updates weekly and opens at most 10 PRs at a time.
 
 
-如果要让版本 PR 无需人工审批，同时保留普通 PR 的审批和必需 CI，可将审批要求单独放入一个只包含审批规则的 branch ruleset，将自动化 App 仅加入该 ruleset 的 pull-request-only bypass；必需状态检查继续留在没有该 App bypass 的 branch protection 或另一个 ruleset 中。若当前使用 classic branch protection 的必需审批，需先把审批要求迁移到这个独立 ruleset。不要让 App bypass 包含 CI 检查的规则集；如果仓库设置无法把审批和检查分开，就保留现有保护并接受版本 PR 需要人工审批。
+To let release PRs merge without manual approval while keeping approval and required CI for regular PRs, put the approval requirement in a separate branch ruleset that contains only approval rules, and add the automation app only to that ruleset's pull-request-only bypass; keep the required status checks in branch protection or in another ruleset that has no bypass for that app. If you currently use classic branch protection's required approvals, first move the approval requirement into this separate ruleset. Never give the app a bypass on a ruleset that contains CI checks; if the repository settings cannot separate approvals from checks, keep the existing protection and accept that release PRs need manual approval.
 
-## 发布
+## Releasing
 
-版本 Tag、草稿 Release、构建、测试、安装器和 SHA-256 上传及 Release 发布由上述流程自动完成。仍需按 [`RELEASE_CHECKLIST.md`](RELEASE_CHECKLIST.md) 完成发布后的人工安装和运行检查。至少需要确认：
+The version tag, draft release, build, tests, installer and SHA-256 upload, and publishing the release are all done automatically by the process above. You still need to complete the manual post-release install and run checks in [`RELEASE_CHECKLIST.md`](RELEASE_CHECKLIST.md). At a minimum, confirm that:
 
-- Release x64 构建成功；
-- CTest 和手动 Smoke Test 已完成；
-- NSIS 安装包可以在干净环境安装并启动；
-- 包含项目许可证和所有第三方许可证；
-- `version.txt`、版本 Tag、CMake 版本、安装包文件名和应用 About 版本一致；
-- Release 说明包含已知限制、数据影响和 SHA-256 校验和。
+- the Release x64 build succeeded;
+- CTest and a manual smoke test have been completed;
+- the NSIS installer installs and launches in a clean environment;
+- the project license and all third-party licenses are included;
+- `version.txt`, the version tag, the CMake version, the installer file name, and the version in the app's About page match;
+- the release notes include known limitations, data impact, and the SHA-256 checksums.
 
-## 贡献许可
+## Contribution license
 
-提交贡献时，你确认：
+By submitting a contribution, you confirm that:
 
-1. 你有权提交该贡献；
-2. 该贡献不会故意包含未经许可的第三方内容；
-3. 你同意该贡献可以按照本仓库的 MIT License 发布；
-4. 你保留自己对贡献内容的著作权；
-5. 如果贡献受到雇主或其他主体约束，你已经获得必要授权。
+1. you have the right to submit it;
+2. it does not knowingly include unlicensed third-party content;
+3. you agree that it may be published under this repository's MIT License;
+4. you keep the copyright to your contribution;
+5. if your contribution is subject to an employer or another party, you have obtained the necessary permission.
 
-本文件不替代 LICENSE，也不会改变第三方组件各自的许可证。
+This file does not replace LICENSE and does not change the individual licenses of third-party components.
