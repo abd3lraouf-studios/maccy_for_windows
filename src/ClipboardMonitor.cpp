@@ -328,10 +328,10 @@ bool ClipboardMonitor::ShouldIgnoreText(std::wstring_view text) const {
 }
 
 std::wstring ClipboardMonitor::GetSourceApplication() {
-    HWND owner = GetClipboardOwner();
-    if (owner == nullptr) {
-        owner = GetOpenClipboardWindow();
-    }
+    // Owner-less writes (OpenClipboard(NULL): clip.exe, PowerShell) have no
+    // source. GetOpenClipboardWindow is no fallback: this runs while Maccy
+    // holds the clipboard open, so it would name Maccy itself.
+    const HWND owner = GetClipboardOwner();
     if (owner == nullptr) {
         return {};
     }
