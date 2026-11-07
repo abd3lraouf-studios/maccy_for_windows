@@ -19,7 +19,7 @@ if(NOT WIN32)
 endif()
 
 find_package(unofficial-sqlite3 CONFIG REQUIRED)
-find_package(Boost CONFIG REQUIRED COMPONENTS json locale system)
+find_package(Boost CONFIG REQUIRED COMPONENTS json system)
 find_package(OpenSSL REQUIRED)
 find_path(WTL_INCLUDE_DIR NAMES atlapp.h REQUIRED)
 
@@ -148,7 +148,6 @@ target_include_directories(maccy PRIVATE
 target_link_libraries(maccy PRIVATE
         unofficial::sqlite3::sqlite3
         Boost::json
-        Boost::locale
         Boost::system
         OpenSSL::SSL
         OpenSSL::Crypto
@@ -196,7 +195,6 @@ target_include_directories(maccy_update_checker_tests PRIVATE
 target_compile_definitions(maccy_update_checker_tests PRIVATE UNICODE _UNICODE)
 target_link_libraries(maccy_update_checker_tests PRIVATE
         Boost::json
-        Boost::locale
         Boost::system
         OpenSSL::SSL
         OpenSSL::Crypto
@@ -241,7 +239,7 @@ target_include_directories(maccy_file_history_tests PRIVATE
         "${MACCY_GENERATED_DIR}" "${MACCY_SOURCE_DIR}" "${WTL_INCLUDE_DIR}")
 target_compile_definitions(maccy_file_history_tests PRIVATE UNICODE _UNICODE)
 target_link_libraries(maccy_file_history_tests PRIVATE
-        unofficial::sqlite3::sqlite3 Boost::locale user32 gdi32 shell32 windowscodecs ole32)
+        unofficial::sqlite3::sqlite3 user32 gdi32 shell32 windowscodecs ole32)
 if(MSVC)
     target_compile_options(maccy_file_history_tests PRIVATE /utf-8)
 endif()
@@ -271,7 +269,7 @@ install(FILES
 )
 
 set(MACCY_VCPKG_SHARE_DIR "${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/share")
-foreach(MACCY_VCPKG_LICENSE_PORT IN ITEMS boost-beast boost-json boost-locale boost-system openssl sqlite3 wtl)
+foreach(MACCY_VCPKG_LICENSE_PORT IN ITEMS boost-beast boost-json boost-system openssl sqlite3 wtl)
     install(FILES "${MACCY_VCPKG_SHARE_DIR}/${MACCY_VCPKG_LICENSE_PORT}/copyright"
             DESTINATION "licenses/${MACCY_VCPKG_LICENSE_PORT}")
 endforeach()
@@ -341,7 +339,7 @@ endif()
 set(CPACK_PACKAGE_NAME "${PROJECT_NAME}")
 set(CPACK_PACKAGE_VENDOR "maccy")
 set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "${PROJECT_NAME} system tray application")
-set(CPACK_PACKAGE_CONTACT "https://github.com/halifox/maccy_for_windows")
+set(CPACK_PACKAGE_CONTACT "https://github.com/abd3lraouf-studios/maccy_for_windows")
 set(CPACK_PACKAGE_VERSION "${PROJECT_VERSION}")
 set(CPACK_RESOURCE_FILE_LICENSE "${MACCY_PROJECT_LICENSE}")
 set(CPACK_RESOURCE_FILE_README "${MACCY_PROJECT_README}")
@@ -360,8 +358,9 @@ set(CPACK_NSIS_EXECUTABLES_DIRECTORY "${CMAKE_INSTALL_BINDIR}")
 set(CPACK_NSIS_INSTALLED_ICON_NAME "${CMAKE_INSTALL_BINDIR}/maccy.exe")
 set(CPACK_NSIS_MUI_ICON "${MACCY_APP_ICON_ICO}")
 set(CPACK_NSIS_MUI_UNIICON "${MACCY_APP_ICON_ICO}")
-set(CPACK_NSIS_URL_INFO_ABOUT "https://github.com/halifox/maccy_for_windows")
-set(CPACK_NSIS_HELP_LINK "https://github.com/halifox/maccy_for_windows/issues")
+set(CPACK_NSIS_URL_INFO_ABOUT "https://github.com/abd3lraouf-studios/maccy_for_windows")
+# Issues are disabled on the fork, so help points at the repository itself.
+set(CPACK_NSIS_HELP_LINK "https://github.com/abd3lraouf-studios/maccy_for_windows")
 set(CPACK_NSIS_ENABLE_UNINSTALL_BEFORE_INSTALL OFF)
 set(CPACK_NSIS_MODIFY_PATH OFF)
 set(CPACK_NSIS_MUI_FINISHPAGE_RUN "maccy.exe")

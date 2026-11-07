@@ -10,7 +10,6 @@
 namespace Localization {
 
 void Initialize() noexcept;
-bool IsChinese() noexcept;
 
 std::wstring Text(UINT resource_id);
 std::wstring FromUtf8(std::string_view value);

@@ -1,63 +1,63 @@
 name: Bug report
-description: 报告一个可以复现的问题
+description: Report a problem you can reproduce
 title: "[Bug]: "
 body:
   - type: markdown
     attributes:
       value: |
-        感谢报告问题。
-        请不要提交密码、令牌、真实剪贴板内容或未脱敏数据库。
+        Thanks for reporting a problem.
+        Do not include passwords, tokens, real clipboard content, or unredacted databases.
 
   - type: checkboxes
     id: preflight
     attributes:
-      label: 提交前检查
+      label: Before you submit
       options:
-        - label: 我已经搜索过已有 Issue，没有发现相同问题。
+        - label: I searched existing issues and found no report of the same problem.
           required: true
-        - label: 我已经移除了所有敏感信息和真实剪贴板内容。
+        - label: I removed all sensitive information and real clipboard content.
           required: true
 
   - type: input
     id: version
     attributes:
-      label: 应用版本或 Git commit
-      placeholder: 例如 1.0.0 或 a1a7947
+      label: App version or Git commit
+      placeholder: For example, 1.0.0 or a1a7947
     validations:
       required: true
 
   - type: input
     id: windows
     attributes:
-      label: Windows 版本
-      placeholder: 例如 Windows 11 24H2 x64
+      label: Windows version
+      placeholder: For example, Windows 11 24H2 x64
     validations:
       required: true
 
   - type: dropdown
     id: installation
     attributes:
-      label: 使用方式
+      label: How you run it
       options:
-        - 发布包
-        - 本地编译
-        - 其他
+        - Release installer
+        - Local build
+        - Other
     validations:
       required: true
 
   - type: textarea
     id: description
     attributes:
-      label: 问题描述
-      description: 请清楚说明实际发生了什么。
+      label: Description
+      description: Describe clearly what actually happened.
     validations:
       required: true
 
   - type: textarea
     id: reproduction
     attributes:
-      label: 复现步骤
-      description: 请提供最小且可重复的步骤。
+      label: Steps to reproduce
+      description: Give the smallest set of steps that reproduces the problem every time.
       placeholder: |
         1. ...
         2. ...
@@ -68,22 +68,22 @@ body:
   - type: textarea
     id: expected
     attributes:
-      label: 预期结果
+      label: Expected result
     validations:
       required: true
 
   - type: textarea
     id: actual
     attributes:
-      label: 实际结果
+      label: Actual result
     validations:
       required: true
 
   - type: textarea
     id: logs
     attributes:
-      label: 日志、截图或录屏
-      description: 请先脱敏；不要上传数据库或真实剪贴板内容。
+      label: Logs, screenshots, or recordings
+      description: Redact them first. Do not upload databases or real clipboard content.
       render: text
     validations:
       required: false

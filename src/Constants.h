@@ -5,16 +5,16 @@
 #include <cstdint>
 
 // ============================================================================
-// 应用程序常量定义
-// 集中管理所有常量，避免分散在各个文件中
+// Application-wide constants, kept in one place so they are not scattered
+// across source files.
 // ============================================================================
 
 namespace AppConstants {
-    // 应用程序信息
+    // Application information
     inline constexpr const wchar_t* kAppVersion = AppVersion::kString;
 
     // ========================================================================
-    // Windows 自定义消息常量 (WM_APP + N)
+    // Custom window messages (WM_APP + N)
     // +1 tray, +2 ui update, +3 preview worker, +4 preview command,
     // +5 storage worker, +6 update checker, +7 reserved,
     // +8 installer shutdown, +9 open hotkey, +10 capture hotkey, +11 thumbnail worker.
@@ -31,7 +31,7 @@ namespace AppConstants {
     constexpr UINT kOpenHotkeyMessage = WM_APP + 9;
     constexpr UINT kCaptureHotkeyMessage = WM_APP + 10;
 
-    // 预留消息ID空间，便于未来扩展
+    // Base for newer messages, kept well clear of the shipped IDs above.
     constexpr UINT kCustomMessageBase = WM_APP + 100;
     // Posted by the click-outside mouse hook to hide on the UI thread.
     // wParam/lParam are the physical screen point of the button down.
@@ -40,7 +40,7 @@ namespace AppConstants {
     constexpr UINT kHistoryIconMessage = kCustomMessageBase + 4;
 
     // ========================================================================
-    // 定时器ID
+    // Timer IDs
     // ========================================================================
     namespace Timer {
         constexpr UINT_PTR kSearchResultCommit = 1;
@@ -60,14 +60,14 @@ namespace AppConstants {
     }
 
     // ========================================================================
-    // 热键ID
+    // Hotkey IDs
     // ========================================================================
     namespace HotKey {
         constexpr int kOpenPopup = 1006;
     }
 
     // ========================================================================
-    // UI 尺寸常量
+    // UI dimensions
     // ========================================================================
     namespace UI {
         constexpr int kFooterButtonCount = 4;
@@ -82,7 +82,7 @@ namespace AppConstants {
     }
 
     // ========================================================================
-    // 设置窗口常量
+    // Settings window
     // ========================================================================
     namespace SettingsUI {
         constexpr int kPageCount = 6;
@@ -90,7 +90,7 @@ namespace AppConstants {
     }
 
     // ========================================================================
-    // 数据库常量
+    // Database
     // ========================================================================
     namespace DB {
         constexpr int kDefaultHistorySize = 200;

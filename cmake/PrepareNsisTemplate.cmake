@@ -77,20 +77,13 @@ Function MaccyDirectoryPagePre
     Abort
 FunctionEnd
 
-LangString MACCY_APP_CLOSE_PROMPT ${LANG_ENGLISH} "Maccy is still running. Close it manually, then choose Yes to retry; choose No to stop setup."
-LangString MACCY_APP_CLOSE_PROMPT ${LANG_SIMPCHINESE} "Maccy 仍在运行。请手动关闭程序后选择“是”重试；选择“否”停止安装或卸载。"
-LangString MACCY_APP_WAIT_FAILED ${LANG_ENGLISH} "The installer could not confirm that Maccy has exited. Close it manually and retry."
-LangString MACCY_APP_WAIT_FAILED ${LANG_SIMPCHINESE} "安装程序无法确认 Maccy 已退出。请手动关闭程序后重试。"
-LangString MACCY_MACHINE_INSTALL_MESSAGE ${LANG_ENGLISH} "A previous all-users Maccy installation is present. Uninstall it from Windows Settings using an administrator account, then run this per-user installer again. Your data under LocalAppData is kept by the old uninstaller."
-LangString MACCY_MACHINE_INSTALL_MESSAGE ${LANG_SIMPCHINESE} "检测到旧版全机安装。请使用管理员账户在 Windows 设置中卸载旧版，再重新运行此每用户安装程序。旧卸载程序会保留 LocalAppData 中的数据。"
-LangString MACCY_BROKEN_INSTALL_MESSAGE ${LANG_ENGLISH} "A previous per-user Maccy installation has incomplete uninstall registration. Use its existing Uninstall.exe before installing again."
-LangString MACCY_BROKEN_INSTALL_MESSAGE ${LANG_SIMPCHINESE} "检测到旧版每用户安装，但卸载记录不完整。请先运行原安装目录中的 Uninstall.exe。"
-LangString MACCY_UNINSTALL_DATA_NOTICE ${LANG_ENGLISH} "Maccy keeps clipboard history and settings in your local user profile. They are kept unless you choose to remove them."
-LangString MACCY_UNINSTALL_DATA_NOTICE ${LANG_SIMPCHINESE} "Maccy 会在当前用户配置文件中保存剪贴板历史和设置。默认保留，只有勾选后才会删除。"
+LangString MACCY_APP_CLOSE_PROMPT ${LANG_ENGLISH} "Maccy is still running. Close it, then click Yes to try again, or click No to cancel."
+LangString MACCY_APP_WAIT_FAILED ${LANG_ENGLISH} "Could not confirm that Maccy has closed. Close Maccy and try again."
+LangString MACCY_MACHINE_INSTALL_MESSAGE ${LANG_ENGLISH} "An older Maccy installation for all users was found. Uninstall it from Windows Settings with an administrator account, then run this installer again. Uninstalling it keeps your clipboard history and settings."
+LangString MACCY_BROKEN_INSTALL_MESSAGE ${LANG_ENGLISH} "A previous Maccy installation was found, but its uninstall information is incomplete. Run Uninstall.exe from its installation folder, then run this installer again."
+LangString MACCY_UNINSTALL_DATA_NOTICE ${LANG_ENGLISH} "Maccy stores your clipboard history and settings in your user profile. They are kept unless you choose to delete them."
 LangString MACCY_UNINSTALL_DATA_OPTION ${LANG_ENGLISH} "Delete clipboard history, pinned items, settings, and other Maccy data"
-LangString MACCY_UNINSTALL_DATA_OPTION ${LANG_SIMPCHINESE} "删除剪贴板历史、固定项目、设置及其他 Maccy 数据"
-LangString MACCY_UNINSTALL_DATA_DELETE_FAILED ${LANG_ENGLISH} "Some Maccy user data could not be removed. Close any remaining Maccy processes and remove the folder manually: $LOCALAPPDATA\maccy"
-LangString MACCY_UNINSTALL_DATA_DELETE_FAILED ${LANG_SIMPCHINESE} "部分 Maccy 用户数据无法删除。请关闭所有 Maccy 进程后手动删除：$LOCALAPPDATA\maccy"
+LangString MACCY_UNINSTALL_DATA_DELETE_FAILED ${LANG_ENGLISH} "Some Maccy data could not be deleted. Close any running copies of Maccy, then delete this folder manually: $LOCALAPPDATA\maccy"
 
 Function un.MaccyUserDataPage
   nsDialogs::Create 1018
@@ -145,6 +138,23 @@ maccy_replace_template_text(
     ";Reserve Files"
     "${_maccy_nsis_runtime_code}\n\n;Reserve Files"
     "the NSIS reserve-files section")
+
+# The installer is English only. CPack's template declares dozens of MUI
+# languages, and NSIS would pick one from the user's Windows language while the
+# LangStrings above only exist in English. Drop every declaration, then declare
+# English alone so the pages and the custom messages always match.
+string(REGEX REPLACE "[ \t]*!insertmacro MUI_LANGUAGE \"[^\"\n]*\"[^\n]*\n" ""
+    _maccy_nsis_template "${_maccy_nsis_template}")
+maccy_replace_template_text(
+    _maccy_nsis_template
+    ";Languages\n"
+    ";Languages\n\n  !insertmacro MUI_LANGUAGE \"English\"\n"
+    "the languages section")
+string(REGEX MATCHALL "MUI_LANGUAGE " _maccy_mui_languages "${_maccy_nsis_template}")
+list(LENGTH _maccy_mui_languages _maccy_mui_language_count)
+if(NOT _maccy_mui_language_count EQUAL 1)
+    message(FATAL_ERROR "Cannot customize CPack NSIS template: expected only the English MUI language, found ${_maccy_mui_language_count} declarations.")
+endif()
 
 string(FIND "${_maccy_nsis_template}" "Function .onInit\n" _maccy_on_init_start)
 if(_maccy_on_init_start EQUAL -1)
