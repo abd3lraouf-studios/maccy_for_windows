@@ -11,6 +11,7 @@
 #include <commctrl.h>
 #include <commdlg.h>
 #include <shellapi.h>
+#include <vssym32.h>
 
 #include <algorithm>
 #include <array>
@@ -195,6 +196,7 @@ LRESULT EditPinDialog::OnInitDialog(UINT, WPARAM, LPARAM, BOOL &handled) {
         m_hintLabel.SetWindowText(Localization::Text(IDS_UNEDITABLE_CONTENT).c_str());
     }
 
+    Theme::ApplyToWindow(m_hWnd);
     return TRUE;
 }
 
@@ -277,6 +279,7 @@ LRESULT EditIgnoreDialog::OnInitDialog(UINT, WPARAM, LPARAM, BOOL &handled) {
         }
     }
 
+    Theme::ApplyToWindow(m_hWnd);
     m_valueEdit.SetSel(0, -1);
     m_valueEdit.SetFocus();
 
@@ -522,6 +525,251 @@ constexpr std::array<IgnorePageDefinition, AppConstants::SettingsUI::kIgnorePage
     IgnorePageDefinition{IDS_SETTINGS_IGNORE_REGEXPS},
 };
 
+bool HasClass(HWND window, const wchar_t *class_name) {
+    wchar_t name[32]{};
+    return window != nullptr && ::GetClassNameW(window, name, ARRAYSIZE(name)) > 0 &&
+        ::lstrcmpiW(name, class_name) == 0;
+}
+
+// Draws a check box or radio button the way the control would, but with the
+// label in palette colours: with visual styles the control ignores the
+// WM_CTLCOLORSTATIC text colour, which leaves dark text on a dark page.
+void DrawCheckButton(CButton button, CDCHandle dc, CRect rect, bool radio) {
+    const Theme::Palette &palette = Theme::Current();
+    const UINT dpi = ::GetDpiForWindow(button);
+    const bool enabled = button.IsWindowEnabled() != FALSE;
+    const UINT state = button.GetState();
+    const int check = button.GetCheck();
+    const auto ui_state = static_cast<UINT>(button.SendMessage(WM_QUERYUISTATE));
+
+    // Each check state has four glyphs in a row: normal, hot, pressed, disabled.
+    const int column = !enabled ? 3 : (state & BST_PUSHED) != 0 ? 2 : (state & BST_HOT) != 0 ? 1 : 0;
+    const int part = radio ? BP_RADIOBUTTON : BP_CHECKBOX;
+    const int glyph_state = column + (radio
+        ? (check == BST_CHECKED ? RBS_CHECKEDNORMAL : RBS_UNCHECKEDNORMAL)
+        : (check == BST_CHECKED ? CBS_CHECKEDNORMAL
+            : check == BST_INDETERMINATE ? CBS_MIXEDNORMAL : CBS_UNCHECKEDNORMAL));
+
+    dc.FillRect(rect, Theme::WindowBrush());
+
+    // Opened from the button, so it is the glyph set ApplyToControl chose
+    // (dark or light) at the button's DPI.
+    const HTHEME theme = ::OpenThemeDataForDpi(button, VSCLASS_BUTTON, dpi);
+    SIZE glyph{ScaleFromDefaultDpi(13, dpi), ScaleFromDefaultDpi(13, dpi)};
+    if (theme != nullptr) {
+        ::GetThemePartSize(theme, dc, part, glyph_state, nullptr, TS_DRAW, &glyph);
+    }
+    // BS_VCENTER: the glyph and the label are centred in the control.
+    const CRect box(CPoint(rect.left, rect.top + (rect.Height() - glyph.cy) / 2), CSize(glyph));
+    if (theme != nullptr) {
+        ::DrawThemeBackground(theme, dc, part, glyph_state, &box, nullptr);
+        ::CloseThemeData(theme);
+    } else {
+        CRect frame = box;
+        dc.DrawFrameControl(&frame, DFC_BUTTON,
+            (radio ? DFCS_BUTTONRADIO : DFCS_BUTTONCHECK) |
+            (check == BST_CHECKED ? DFCS_CHECKED : 0) | (enabled ? 0 : DFCS_INACTIVE));
+    }
+
+    const std::wstring text = ReadWindowText(button);
+    const HFONT previous_font = dc.SelectFont(button.GetFont());
+    // BS_MULTILINE everywhere in the templates: wrap like the control.
+    const UINT format = DT_LEFT | DT_WORDBREAK | ((ui_state & UISF_HIDEACCEL) != 0 ? DT_HIDEPREFIX : 0);
+    // The same gap AutoSizeTextControl reserves after the glyph.
+    CRect label(box.right + ScaleFromDefaultDpi(4, dpi), rect.top, rect.right, rect.bottom);
+    CRect measured = label;
+    dc.DrawText(text.c_str(), -1, &measured, format | DT_CALCRECT);
+    label.top += std::max(0, (label.Height() - measured.Height()) / 2);
+    label.bottom = label.top + measured.Height();
+    dc.SetBkMode(TRANSPARENT);
+    dc.SetTextColor(enabled ? palette.text : palette.muted);
+    dc.DrawText(text.c_str(), -1, &label, format);
+    if ((state & BST_FOCUS) != 0 && (ui_state & UISF_HIDEFOCUS) == 0 && !text.empty()) {
+        CRect focus(label.left - 1, label.top, label.left + measured.Width() + 1, label.bottom);
+        dc.DrawFocusRect(&focus);
+    }
+    dc.SelectFont(previous_font);
+}
+
+// Tabs drawn like the native control: a body frame, the selected tab raised
+// and joined to the body, the others on the surface colour with muted text.
+void PaintTabs(CTabCtrl tabs, CDCHandle dc) {
+    const Theme::Palette &palette = Theme::Current();
+    const int line = std::max(1, ScaleFromDefaultDpi(1, ::GetDpiForWindow(tabs)));
+    const auto border = [&](int left, int top, int right, int bottom) {
+        dc.FillSolidRect(CRect(left, top, right, bottom), palette.border);
+    };
+
+    CRect client;
+    tabs.GetClientRect(&client);
+    dc.FillSolidRect(client, palette.window);
+
+    const int count = tabs.GetItemCount();
+    const int selected = tabs.GetCurSel();
+    CRect body = client;
+    if (count > 0) {
+        CRect first;
+        tabs.GetItemRect(0, &first);
+        body.top = first.bottom;
+    }
+    border(body.left, body.top, body.right, body.top + line);
+    border(body.left, body.top, body.left + line, body.bottom);
+    border(body.right - line, body.top, body.right, body.bottom);
+    border(body.left, body.bottom - line, body.right, body.bottom);
+
+    const auto ui_state = static_cast<UINT>(tabs.SendMessage(WM_QUERYUISTATE));
+    const UINT format = DT_CENTER | DT_VCENTER | DT_SINGLELINE |
+        ((ui_state & UISF_HIDEACCEL) != 0 ? DT_HIDEPREFIX : 0);
+    const HFONT previous_font = dc.SelectFont(tabs.GetFont());
+    dc.SetBkMode(TRANSPARENT);
+    const auto draw_tab = [&](int index) {
+        const bool is_selected = index == selected;
+        CRect tab;
+        tabs.GetItemRect(index, &tab);
+        if (is_selected) {
+            tab.InflateRect(2 * line, 2 * line, 2 * line, 0);
+            tab.bottom += line; // covers the body's top line under the tab
+        }
+        dc.FillSolidRect(tab, is_selected ? palette.window : palette.surface);
+        border(tab.left, tab.top, tab.right, tab.top + line);
+        border(tab.left, tab.top, tab.left + line, tab.bottom);
+        border(tab.right - line, tab.top, tab.right, tab.bottom);
+
+        wchar_t text[128]{};
+        TCITEMW item{};
+        item.mask = TCIF_TEXT;
+        item.pszText = text;
+        item.cchTextMax = ARRAYSIZE(text);
+        tabs.GetItem(index, &item);
+        dc.SetTextColor(is_selected ? palette.text : palette.muted);
+        dc.DrawText(text, -1, &tab, format);
+        if (is_selected && ::GetFocus() == tabs.m_hWnd && (ui_state & UISF_HIDEFOCUS) == 0) {
+            CRect focus = tab;
+            focus.DeflateRect(3 * line, 3 * line);
+            dc.DrawFocusRect(&focus);
+        }
+    };
+    // The selected tab last, so its raised edges overlap its neighbours.
+    for (int index = 0; index < count; ++index) {
+        if (index != selected) {
+            draw_tab(index);
+        }
+    }
+    if (selected >= 0 && selected < count) {
+        draw_tab(selected);
+    }
+    dc.SelectFont(previous_font);
+}
+
+}
+
+LRESULT ThemedDialog::OnControlColor(UINT message, WPARAM wParam, LPARAM lParam, BOOL &handled) {
+    const Theme::Palette &palette = Theme::Current();
+    CDCHandle dc(reinterpret_cast<HDC>(wParam));
+    const HWND control = reinterpret_cast<HWND>(lParam);
+    const bool enabled = ::IsWindowEnabled(control) != FALSE;
+    // Read-only and disabled edits ask for static colours, but they are still
+    // input fields: the hotkey boxes would otherwise look like plain labels.
+    const bool field = message == WM_CTLCOLOREDIT || message == WM_CTLCOLORLISTBOX ||
+        (message == WM_CTLCOLORSTATIC && HasClass(control, WC_EDITW));
+    if (palette.high_contrast) {
+        if (message == WM_CTLCOLORSTATIC && field && enabled) {
+            dc.SetBkColor(::GetSysColor(COLOR_WINDOW));
+            dc.SetTextColor(::GetSysColor(COLOR_WINDOWTEXT));
+            return reinterpret_cast<LRESULT>(::GetSysColorBrush(COLOR_WINDOW));
+        }
+        handled = FALSE;
+        return 0;
+    }
+    dc.SetTextColor(enabled ? palette.text : palette.muted);
+    dc.SetBkColor(field ? palette.surface : palette.window);
+    return reinterpret_cast<LRESULT>(field ? Theme::SurfaceBrush() : Theme::WindowBrush());
+}
+
+// The templates' only owner-drawn statics are separator lines: an etched
+// static ignores every colour message, so it would stay a light 3D groove.
+LRESULT ThemedDialog::OnDrawItem(UINT, WPARAM, LPARAM lParam, BOOL &handled) {
+    const auto *item = reinterpret_cast<const DRAWITEMSTRUCT *>(lParam);
+    if (item == nullptr || item->CtlType != ODT_STATIC) {
+        handled = FALSE;
+        return 0;
+    }
+    CDCHandle dc(item->hDC);
+    CRect rect(item->rcItem);
+    const Theme::Palette &palette = Theme::Current();
+    if (palette.high_contrast) {
+        ::DrawThemeParentBackground(item->hwndItem, dc, &rect);
+        dc.DrawEdge(&rect, EDGE_ETCHED, BF_TOP);
+        return TRUE;
+    }
+    dc.FillRect(rect, Theme::WindowBrush());
+    const int line = std::max(1, ScaleFromDefaultDpi(1, ::GetDpiForWindow(item->hwndItem)));
+    rect.bottom = std::min(rect.bottom, rect.top + line);
+    dc.FillSolidRect(rect, palette.border);
+    return TRUE;
+}
+
+LRESULT ThemedDialog::OnCustomDraw(int, LPNMHDR header, BOOL &handled) {
+    CButton button(header->hwndFrom);
+    const UINT type = HasClass(button, WC_BUTTONW) ? (button.GetButtonStyle() & BS_TYPEMASK) : BS_PUSHBUTTON;
+    const bool check = type == BS_CHECKBOX || type == BS_AUTOCHECKBOX ||
+        type == BS_3STATE || type == BS_AUTO3STATE;
+    const bool radio = type == BS_RADIOBUTTON || type == BS_AUTORADIOBUTTON;
+    if (Theme::Current().high_contrast || (!check && !radio)) {
+        handled = FALSE;
+        return 0;
+    }
+    const auto *draw = reinterpret_cast<const NMCUSTOMDRAW *>(header);
+    if (draw->dwDrawStage != CDDS_PREPAINT) {
+        return CDRF_DODEFAULT;
+    }
+    DrawCheckButton(button, draw->hdc, draw->rc, radio);
+    return CDRF_SKIPDEFAULT;
+}
+
+void ThemedTabCtrl::Attach(HWND window) {
+    if (IsWindow()) {
+        UnsubclassWindow();
+    }
+    SubclassWindow(window);
+}
+
+LRESULT ThemedTabCtrl::OnEraseBackground(UINT, WPARAM, LPARAM, BOOL &handled) {
+    // OnPaint covers every pixel.
+    handled = !Theme::Current().high_contrast;
+    return 1;
+}
+
+LRESULT ThemedTabCtrl::OnPaint(UINT, WPARAM, LPARAM, BOOL &handled) {
+    if (Theme::Current().high_contrast) {
+        handled = FALSE;
+        return 0;
+    }
+    CPaintDC dc(m_hWnd);
+    PaintTabs(*this, dc.m_hDC);
+    return 0;
+}
+
+void ThemedListView::Attach(HWND window) {
+    if (IsWindow()) {
+        UnsubclassWindow();
+    }
+    SubclassWindow(window);
+}
+
+LRESULT ThemedListView::OnHeaderCustomDraw(int, LPNMHDR header, BOOL &handled) {
+    if (Theme::Current().high_contrast || header->hwndFrom != GetHeader().m_hWnd) {
+        handled = FALSE;
+        return 0;
+    }
+    const auto *draw = reinterpret_cast<const NMCUSTOMDRAW *>(header);
+    if (draw->dwDrawStage == CDDS_PREPAINT) {
+        return CDRF_NOTIFYITEMDRAW;
+    }
+    if (draw->dwDrawStage == CDDS_ITEMPREPAINT) {
+        ::SetTextColor(draw->hdc, Theme::Current().text);
+    }
+    return CDRF_DODEFAULT;
 }
 
 void HotkeyCaptureEdit::Attach(HWND window) {
@@ -673,7 +921,7 @@ void SettingsWindow::DestroyForOwner() {
 }
 
 void SettingsWindow::CreateTabs() {
-    m_tabs = GetDlgItem(kTabs);
+    m_tabs.Attach(GetDlgItem(kTabs));
 
     for (const PageDefinition &definition : kPageDefinitions) {
         TCITEMW item{};
@@ -775,7 +1023,7 @@ bool SettingsWindow::CreatePageWindows() {
     if (ignoreTabWindow.m_hWnd == nullptr) {
         return false;
     }
-    m_ignoreTabs = ignoreTabWindow;
+    m_ignoreTabs.Attach(ignoreTabWindow);
 
     for (const IgnorePageDefinition &definition : kIgnorePageDefinitions) {
         TCITEMW item{};
@@ -908,7 +1156,7 @@ void SettingsWindow::BindControls() {
     m_sStorageSize = get(kPageStorage, kSStorageSize);
     m_sCurrentSize = get(kPageStorage, kSCurrentSize);
 
-    m_pList = get(kPagePins, kPList);
+    m_pList.Attach(get(kPagePins, kPList));
     m_xIgnoreEvents = get(kPageAdvanced, kXIgnoreEvents);
     m_xIgnoreNext = get(kPageAdvanced, kXIgnoreNext);
 
@@ -995,6 +1243,36 @@ void SettingsWindow::ConfigurePinsList() {
     AddListViewColumn(m_pList, 0, ScaleFromDefaultDpi(63, m_dpi), Localization::Text(IDS_P_KEY).c_str());
     AddListViewColumn(m_pList, 1, ScaleFromDefaultDpi(158, m_dpi), Localization::Text(IDS_P_TITLE).c_str());
     AddListViewColumn(m_pList, 2, ScaleFromDefaultDpi(300, m_dpi), Localization::Text(IDS_P_CONTENT).c_str());
+}
+
+// What controls keep once set; everything else reads Theme::Current() when
+// it paints.
+void SettingsWindow::ApplyThemeColors() {
+    const Theme::Palette &palette = Theme::Current();
+    // The tab-body texture only matches the native tab control, which high
+    // contrast keeps; otherwise WM_CTLCOLORDLG gives the pages the palette.
+    const DWORD texture = palette.high_contrast ? ETDT_ENABLETAB : ETDT_DISABLE;
+    for (const auto &page : m_pages) {
+        ::EnableThemeDialogTexture(page->Handle(), texture);
+    }
+    for (const auto &page : m_ignorePages) {
+        ::EnableThemeDialogTexture(page->Handle(), texture);
+    }
+
+    // Lists read like the text boxes. In high contrast the palette holds the
+    // system window colours, which are the list view defaults.
+    const COLORREF background = palette.high_contrast ? palette.window : palette.surface;
+    const auto color_list = [&](CListViewCtrl list) {
+        if (list.m_hWnd != nullptr) {
+            list.SetBkColor(background);
+            list.SetTextBkColor(background);
+            list.SetTextColor(palette.text);
+        }
+    };
+    color_list(m_pList);
+    for (const IgnorePage &page : m_ignorePageObjects) {
+        color_list(page.ListWindow());
+    }
 }
 
 void SettingsWindow::SetPage(int page) {
@@ -1442,6 +1720,9 @@ LRESULT SettingsWindow::OnInitDialog(UINT, WPARAM, LPARAM, BOOL &handled) {
     SetUpdateCheckBusy(m_updateCheckBusy);
     SetPage(kPageGeneral);
     SetIgnorePage(0);
+    // MainWindow re-applies both on later theme changes, see OnThemeChanged.
+    Theme::ApplyToWindow(m_hWnd);
+    ApplyThemeColors();
 
     // Settings is modeless, so the main loop must route its keys through
     // the dialog manager for Tab, Esc, Enter and arrow-key navigation.
@@ -1646,6 +1927,16 @@ LRESULT SettingsWindow::OnDestroy(UINT, WPARAM, LPARAM, BOOL &handled) {
         m_ignoreImageList.Destroy();
     }
     m_hWnd = nullptr;
+    return 0;
+}
+
+// MainWindow has already run Theme::ApplyToWindow on this window, which
+// restyled every control; what is left is the state set once and a repaint
+// of every page, tab strip and list.
+LRESULT SettingsWindow::OnThemeChanged(UINT, WPARAM, LPARAM, BOOL &handled) {
+    handled = TRUE;
+    ApplyThemeColors();
+    RedrawWindow(nullptr, nullptr, RDW_INVALIDATE | RDW_ERASE | RDW_FRAME | RDW_ALLCHILDREN);
     return 0;
 }
 
