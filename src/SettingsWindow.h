@@ -162,7 +162,7 @@ private:
 class SettingsResourcePageBase {
 public:
     virtual ~SettingsResourcePageBase() = default;
-    virtual HWND CreatePage(HWND parent, CMessageMap &owner) = 0;
+    virtual HWND CreatePage(HWND tabs, CMessageMap &owner) = 0;
     virtual HWND Handle() const noexcept = 0;
     virtual void LoadSettings(AppSettings &settings) = 0;
     virtual BOOL ExchangeSettings(BOOL saveAndValidate) = 0;
@@ -194,9 +194,20 @@ public:
     using WTL::CWinDataExchange<SettingsResourcePage<ResourceId>>::DDX_Check;
     using WTL::CWinDataExchange<SettingsResourcePage<ResourceId>>::DDX_Index;
 
-    HWND CreatePage(HWND parent, CMessageMap &owner) override {
+    // A page is a sibling of its tab control, as in a property sheet, not a
+    // child of it: the dialog manager only walks into WS_EX_CONTROLPARENT
+    // windows for Tab navigation, and a tab control with that style stops
+    // being a tab stop itself.
+    HWND CreatePage(HWND tabs, CMessageMap &owner) override {
         m_ownerMessageMap = &owner;
-        return CDialogImpl<SettingsResourcePage<ResourceId>>::Create(parent);
+        m_tabs = tabs;
+        if (CDialogImpl<SettingsResourcePage<ResourceId>>::Create(m_tabs.GetParent()) == nullptr) {
+            return nullptr;
+        }
+        // Above the tab control in Z order, so the page is drawn over the tab
+        // body and Tab reaches its controls before the tab strip.
+        this->SetWindowPos(HWND_TOP, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+        return this->m_hWnd;
     }
 
     HWND Handle() const noexcept override { return this->m_hWnd; }
@@ -318,9 +329,8 @@ public:
 
 private:
     LRESULT OnBlankClick(UINT, WPARAM, LPARAM, BOOL &handled) {
-        const HWND tabs = ::GetParent(this->m_hWnd);
-        if (tabs != nullptr) {
-            ::SetFocus(tabs);
+        if (m_tabs.m_hWnd != nullptr) {
+            m_tabs.SetFocus();
         }
         handled = TRUE;
         return 0;
@@ -369,9 +379,10 @@ private:
     }
 
     CMessageMap *m_ownerMessageMap = nullptr;
+    CWindow m_tabs;
 };
 
-class SettingsWindow : public CDialogImpl<SettingsWindow> {
+class SettingsWindow : public CDialogImpl<SettingsWindow>, public CMessageFilter {
 public:
     enum { IDD = IDD_SETTINGS };
 
@@ -390,6 +401,8 @@ public:
     bool IsOpen() const noexcept { return m_hWnd != nullptr && IsWindowVisible(); }
     HWND Window() const noexcept { return m_hWnd; }
 
+    BOOL PreTranslateMessage(MSG *message) override;
+
     BEGIN_MSG_MAP(SettingsWindow)
         MESSAGE_HANDLER(WM_INITDIALOG, OnInitDialog)
         MESSAGE_HANDLER(WM_DPICHANGED, OnDpiChanged)
@@ -397,6 +410,7 @@ public:
         MESSAGE_HANDLER(WM_CLOSE, OnClose)
         MESSAGE_HANDLER(WM_DESTROY, OnDestroy)
 
+        COMMAND_ID_HANDLER(IDCANCEL, OnCancelCommand)
         COMMAND_HANDLER(IDC_G_CHECK_NOW, BN_CLICKED, OnCheckUpdatesCommand)
         COMMAND_HANDLER(IDC_G_NOTIFICATIONS, BN_CLICKED, OnNotificationsCommand)
         COMMAND_HANDLER(IDC_A_RESET_POSITION, BN_CLICKED, OnResetPositionCommand)
@@ -483,6 +497,7 @@ private:
     LRESULT OnDpiChanged(UINT, WPARAM, LPARAM, BOOL &handled);
     LRESULT OnSize(UINT, WPARAM, LPARAM, BOOL &handled);
     LRESULT OnClose(UINT, WPARAM, LPARAM, BOOL &handled);
+    LRESULT OnCancelCommand(WORD, WORD, HWND, BOOL &handled);
     LRESULT OnCheckUpdatesCommand(WORD, WORD, HWND, BOOL &handled);
     LRESULT OnNotificationsCommand(WORD, WORD, HWND, BOOL &handled);
     LRESULT OnResetPositionCommand(WORD, WORD, HWND, BOOL &handled);

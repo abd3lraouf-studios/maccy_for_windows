@@ -6,6 +6,7 @@
 #include "Localization.h"
 
 #include <windows.h>
+#include <atltypes.h>
 #include <commctrl.h>
 #include <commdlg.h>
 #include <shellapi.h>
@@ -20,6 +21,9 @@
 
 #include "PinKeys.h"
 #include "TrayIcon.h"
+
+// Defined in main.cpp; owns the thread's CMessageLoop.
+extern CAppModule _Module;
 
 namespace {
 
@@ -374,6 +378,24 @@ UINT WindowDpi(CWindow window) {
     return USER_DEFAULT_SCREEN_DPI;
 }
 
+// Fits pages over the display area of the tab control they belong to. They
+// are its siblings, so the area is computed in the shared parent's client
+// coordinates.
+template <typename Pages>
+void FitPagesToTab(CTabCtrl tabs, const Pages &pages) {
+    CRect area;
+    tabs.GetWindowRect(&area);
+    tabs.GetParent().ScreenToClient(&area);
+    tabs.AdjustRect(FALSE, &area);
+    area.right = std::max(area.right, area.left + 1);
+    area.bottom = std::max(area.bottom, area.top + 1);
+    for (const auto &page : pages) {
+        if (page != nullptr && page->Handle() != nullptr) {
+            page->Window().SetWindowPos(nullptr, &area, SWP_NOZORDER | SWP_NOACTIVATE);
+        }
+    }
+}
+
 void UpdateBehaviorHint(CStatic window, bool paste_default, bool plain_default) {
     const std::array<std::wstring, 3> key_expressions = {
         paste_default ? L"Alt+Enter" : L"Enter",
@@ -531,9 +553,12 @@ LRESULT HotkeyCaptureEdit::OnCaptureHotkey(UINT, WPARAM virtual_key, LPARAM modi
         m_hotkey = HotKeyConfig{static_cast<UINT>(modifiers), key};
     }
     UpdateText();
-    const HWND focusTarget = ::GetParent(::GetParent(m_hWnd));
-    if (focusTarget != nullptr) {
-        ::SetFocus(focusTarget);
+    // Leave the box so capture ends. The tab strip is a neutral target:
+    // the next control could be another hotkey box, which would start a new
+    // capture, and focusing the dialog itself gives focus straight back here.
+    const HWND tabs = ::GetDlgItem(::GetAncestor(m_hWnd, GA_ROOT), IDC_SETTINGS_TABS);
+    if (tabs != nullptr) {
+        ::SetFocus(tabs);
     }
     handled = TRUE;
     return 0;
@@ -779,36 +804,11 @@ void SettingsWindow::LayoutPages() {
         return;
     }
 
-    RECT tab_rect{};
-    m_tabs.GetClientRect(&tab_rect);
-    TabCtrl_AdjustRect(m_tabs.m_hWnd, FALSE, &tab_rect);
-    const int width = static_cast<int>(std::max<LONG>(1, tab_rect.right - tab_rect.left));
-    const int height = static_cast<int>(std::max<LONG>(1, tab_rect.bottom - tab_rect.top));
+    FitPagesToTab(m_tabs, m_pages);
 
-    for (const auto &page : m_pages) {
-        if (page != nullptr && page->Handle() != nullptr) {
-            ::SetWindowPos(page->Handle(), nullptr, tab_rect.left, tab_rect.top,
-                           width, height,
-                           SWP_NOZORDER | SWP_NOACTIVATE);
-        }
-    }
-
-    // The ignore page contains a second tab control. Its resource pages must
-    // follow that tab control's client area as well; otherwise a DPI change
-    // leaves the old logical-size child windows clipped.
+    // The ignore page holds a second tab control with its own pages.
     if (m_ignoreTabs.m_hWnd != nullptr) {
-        RECT ignore_rect{};
-        m_ignoreTabs.GetClientRect(&ignore_rect);
-        TabCtrl_AdjustRect(m_ignoreTabs.m_hWnd, FALSE, &ignore_rect);
-        const int ignore_width = static_cast<int>(std::max<LONG>(1, ignore_rect.right - ignore_rect.left));
-        const int ignore_height = static_cast<int>(std::max<LONG>(1, ignore_rect.bottom - ignore_rect.top));
-        for (const auto &page : m_ignorePages) {
-            if (page != nullptr && page->Handle() != nullptr) {
-                ::SetWindowPos(page->Handle(), nullptr, ignore_rect.left, ignore_rect.top,
-                               ignore_width, ignore_height,
-                               SWP_NOZORDER | SWP_NOACTIVATE);
-            }
-        }
+        FitPagesToTab(m_ignoreTabs, m_ignorePages);
     }
 }
 
@@ -1356,7 +1356,19 @@ LRESULT SettingsWindow::OnInitDialog(UINT, WPARAM, LPARAM, BOOL &handled) {
     SetUpdateCheckBusy(m_updateCheckBusy);
     SetPage(kPageGeneral);
     SetIgnorePage(0);
+
+    // Settings is modeless, so the main loop must route its keys through
+    // the dialog manager for Tab, Esc, Enter and arrow-key navigation.
+    if (CMessageLoop *loop = _Module.GetMessageLoop(); loop != nullptr) {
+        loop->AddMessageFilter(this);
+    }
     return TRUE;
+}
+
+BOOL SettingsWindow::PreTranslateMessage(MSG *message) {
+    // IsDialogMessage ignores messages for windows outside this dialog, so
+    // the history popup keeps its own keyboard handling.
+    return m_hWnd != nullptr && IsDialogMessage(message);
 }
 
 LRESULT SettingsWindow::OnDpiChanged(UINT, WPARAM wParam, LPARAM lParam, BOOL &handled) {
@@ -1392,6 +1404,13 @@ LRESULT SettingsWindow::OnClose(UINT, WPARAM, LPARAM, BOOL &handled) {
     } else {
         DestroyWindow();
     }
+    return 0;
+}
+
+LRESULT SettingsWindow::OnCancelCommand(WORD, WORD, HWND, BOOL &handled) {
+    // The dialog manager turns Esc into IDCANCEL.
+    handled = TRUE;
+    SendMessage(WM_CLOSE);
     return 0;
 }
 
@@ -1529,6 +1548,9 @@ LRESULT SettingsWindow::OnPinsListKeyDown(int, LPNMHDR header, BOOL &handled) {
 
 LRESULT SettingsWindow::OnDestroy(UINT, WPARAM, LPARAM, BOOL &handled) {
     handled = TRUE;
+    if (CMessageLoop *loop = _Module.GetMessageLoop(); loop != nullptr) {
+        loop->RemoveMessageFilter(this);
+    }
     if (m_windowIcon) {
         SetIcon(nullptr, TRUE);
         SetIcon(nullptr, FALSE);
