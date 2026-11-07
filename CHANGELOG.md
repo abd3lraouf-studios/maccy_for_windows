@@ -7,6 +7,7 @@ First release of the abd3lraouf-studios fork of [halifox/maccy_for_windows](http
 ### Features
 
 * **notifications:** show a Windows notification for every copy, with the source app's icon and name, a short text snippet, or a thumbnail for images; Maccy now appears in Settings > System > Notifications, where it can be turned off or silenced
+* **notifications:** clicking a notification opens the Maccy popup
 * **i18n:** the app, installer and documentation are English only
 * **update:** check this fork's releases for updates
 
