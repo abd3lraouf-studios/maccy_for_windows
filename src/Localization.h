@@ -9,8 +9,6 @@
 
 namespace Localization {
 
-void Initialize() noexcept;
-
 std::wstring Text(UINT resource_id);
 std::wstring FromUtf8(std::string_view value);
 std::wstring Format(

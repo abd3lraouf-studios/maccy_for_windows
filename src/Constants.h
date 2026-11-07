@@ -47,6 +47,8 @@ namespace AppConstants {
         constexpr UINT_PTR kPreview = 2;
         constexpr UINT_PTR kPaste = 3;
         constexpr UINT_PTR kHistoryHover = 4;
+        constexpr UINT_PTR kPopupDeactivated = 5;
+        constexpr UINT_PTR kRevealPopup = 6;
     }
 
     // Bitmask carried by kUiUpdateMessage. Producers only describe what

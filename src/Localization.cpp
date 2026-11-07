@@ -4,11 +4,6 @@
 
 namespace Localization {
 
-void Initialize() noexcept {
-    // The app ships a single English string table, so there is no UI language
-    // to select. Kept only because main.cpp still calls it at startup.
-}
-
 std::wstring FromUtf8(std::string_view value) {
     if (value.empty()) {
         return {};

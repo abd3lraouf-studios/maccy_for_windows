@@ -9,8 +9,8 @@
 // app's AppUserModelID lists Maccy under Settings > System > Notifications,
 // where Windows owns the on/off, banner and sound switches.
 //
-// Icons, thumbnails and the WinRT calls run on a worker thread: the UI thread
-// also owns the low-level keyboard hook, so it must not stall.
+// Icons, thumbnails and the WinRT calls run on a worker thread so a copy never
+// stalls the UI thread.
 namespace CopyNotification {
 
 // Clicking a notification posts kOpenHotkeyMessage to owner.
