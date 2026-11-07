@@ -4,6 +4,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <optional>
 #include <regex>
 #include <string>
 #include <string_view>
@@ -47,6 +48,8 @@ bool IsAnsiTextFormat(const ClipboardFormatData &data);
 bool IsRichTextFormat(const ClipboardFormatData &data);
 bool IsFilesFormat(const ClipboardFormatData &data);
 bool IsTextFormat(UINT format, std::wstring_view name);
+// Unformatted text only: unlike IsTextFormat, HTML and RTF do not count.
+bool IsPlainTextFormat(const ClipboardFormatData &data);
 bool IsImageFormat(UINT format, std::wstring_view name);
 bool IsEncodedImageName(std::wstring_view name);
 bool IsDib(const ClipboardFormatData &data);
@@ -74,5 +77,15 @@ struct SearchParts {
 };
 
 SearchParts SearchPartsFromFormats(const std::vector<ClipboardFormatData> &data);
+
+// A NUL-terminated CF_UNICODETEXT payload holding `text`.
+ClipboardFormatData UnicodeTextFormat(std::wstring_view text);
+
+// The formats "paste without formatting" writes: plain text and file lists.
+// An item with only rich text falls back to its stripped text. nullopt when
+// the item has no text at all, so it is pasted unchanged.
+std::optional<std::vector<ClipboardFormatData>> PlainPasteFormats(
+    const std::vector<ClipboardFormatData> &data
+);
 
 } // namespace ClipboardRules

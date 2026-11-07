@@ -635,9 +635,15 @@ bool ClipboardMonitor::WriteClipboardItem(const ClipboardItem &item, bool remove
         return false;
     }
 
-    const bool has_plain_text = std::any_of(
-        item.data.begin(),
-        item.data.end(),
+    std::optional<std::vector<ClipboardFormatData>> plain_formats;
+    if (remove_formatting) {
+        plain_formats = ClipboardRules::PlainPasteFormats(item.data);
+    }
+    const std::vector<ClipboardFormatData> &formats =
+        plain_formats.has_value() ? *plain_formats : item.data;
+    const bool has_source_text = std::any_of(
+        formats.begin(),
+        formats.end(),
         [](const ClipboardFormatData& data) {
             return ClipboardRules::IsTextFormat(data.format, data.name);
         }
@@ -649,13 +655,8 @@ bool ClipboardMonitor::WriteClipboardItem(const ClipboardItem &item, bool remove
 
     std::vector<PendingFormat> pending;
     bool has_text = false;
-    for (const ClipboardFormatData& data : item.data) {
+    for (const ClipboardFormatData& data : formats) {
         const bool is_text = ClipboardRules::IsTextFormat(data.format, data.name);
-        const bool is_files = ClipboardRules::IsFilesFormat(data);
-        if (remove_formatting && has_plain_text && !is_text && !is_files) {
-            continue;
-        }
-
         UINT format = data.format;
         if (format >= 0xC000 || format == 0) {
             format = RegisterClipboardFormatW(data.name.c_str());
@@ -680,7 +681,8 @@ bool ClipboardMonitor::WriteClipboardItem(const ClipboardItem &item, bool remove
         has_text = has_text || is_text;
     }
 
-    if (pending.empty() || (has_plain_text && !has_text)) {
+    // Text that could not be staged would paste the wrong content; refuse instead.
+    if (pending.empty() || (has_source_text && !has_text)) {
         return false;
     }
 

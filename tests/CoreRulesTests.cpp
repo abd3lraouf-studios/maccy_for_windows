@@ -5,6 +5,7 @@
 #include <cstring>
 #include <regex>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 
@@ -102,6 +103,41 @@ bool CheckRegexBoundAndIgnoreAliases() {
         ClipboardRules::IsClipboardViewerIgnoreFormat(0, L"CF_CLIPBOARD_VIEWER_IGNORE");
 }
 
+ClipboardFormatData ByteFormat(std::wstring name, UINT format, std::string_view text) {
+    ClipboardFormatData data{std::move(name), format};
+    data.bytes.assign(text.begin(), text.end());
+    data.bytes.push_back(0);
+    return data;
+}
+
+bool CheckPlainPasteFormats() {
+    const UINT html_format = ::RegisterClipboardFormatW(L"HTML Format");
+    const UINT rtf_format = ::RegisterClipboardFormatW(L"Rich Text Format");
+    const std::vector<ClipboardFormatData> rich_copy{
+        ClipboardRules::UnicodeTextFormat(L"plain"),
+        ByteFormat(L"HTML Format", html_format, "<b>bold</b>"),
+        ByteFormat(L"Rich Text Format", rtf_format, "{\\rtf1 {\\b bold}}"),
+        ByteFormat(L"CF_TEXT", CF_TEXT, "plain"),
+    };
+    const auto plain = ClipboardRules::PlainPasteFormats(rich_copy);
+    if (!plain || plain->size() != 2 ||
+        !ClipboardRules::IsUnicodeTextFormat((*plain)[0]) ||
+        !ClipboardRules::IsAnsiTextFormat((*plain)[1])) {
+        return false;
+    }
+
+    // Rich text alone still pastes as its stripped text.
+    const auto stripped = ClipboardRules::PlainPasteFormats({rich_copy[1]});
+    if (!stripped || stripped->size() != 1 ||
+        ClipboardRules::DecodeUnicodeText(stripped->front().bytes) != L"bold") {
+        return false;
+    }
+
+    // Without any text there is nothing to strip, so the item pastes unchanged.
+    const ClipboardFormatData image{L"PNG", 0xC123, {1, 2, 3}};
+    return !ClipboardRules::PlainPasteFormats({image}).has_value();
+}
+
 bool CheckRegexMatchErrorIsNoMatch() {
     // Nested repetition over long text exceeds MSVC's match-time stack or
     // complexity limit; the raw call must throw for this check to mean anything.
@@ -130,5 +166,6 @@ int main() {
     if (!CheckStripMarkup()) return 5;
     if (!CheckRegexBoundAndIgnoreAliases()) return 6;
     if (!CheckRegexMatchErrorIsNoMatch()) return 7;
+    if (!CheckPlainPasteFormats()) return 8;
     return 0;
 }

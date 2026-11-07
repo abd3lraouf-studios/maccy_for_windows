@@ -226,6 +226,11 @@ bool IsTextFormat(UINT format, std::wstring_view name) {
         EqualInsensitive(name, L"HTML Format") || EqualInsensitive(name, L"Rich Text Format");
 }
 
+bool IsPlainTextFormat(const ClipboardFormatData &data) {
+    return IsUnicodeTextFormat(data) || IsAnsiTextFormat(data) ||
+        data.format == CF_OEMTEXT || data.format == CF_LOCALE;
+}
+
 bool IsImageFormat(UINT format, std::wstring_view name) {
     return format == CF_DIB || format == CF_DIBV5 || format == CF_BITMAP ||
         EqualInsensitive(name, L"PNG") || EqualInsensitive(name, L"image/png") ||
@@ -647,6 +652,38 @@ SearchParts SearchPartsFromFormats(const std::vector<ClipboardFormatData> &data)
             ? std::move(accumulator.ansi_text)
             : std::move(accumulator.rich_text));
     result.paths = std::move(accumulator.paths);
+    return result;
+}
+
+ClipboardFormatData UnicodeTextFormat(std::wstring_view text) {
+    ClipboardFormatData data{L"CF_UNICODETEXT", CF_UNICODETEXT};
+    data.bytes.resize((text.size() + 1) * sizeof(wchar_t));
+    std::memcpy(data.bytes.data(), text.data(), text.size() * sizeof(wchar_t));
+    std::memset(data.bytes.data() + text.size() * sizeof(wchar_t), 0, sizeof(wchar_t));
+    return data;
+}
+
+std::optional<std::vector<ClipboardFormatData>> PlainPasteFormats(
+    const std::vector<ClipboardFormatData> &data
+) {
+    std::vector<ClipboardFormatData> result;
+    bool has_plain_text = false;
+    for (const ClipboardFormatData &format : data) {
+        if (IsPlainTextFormat(format)) {
+            has_plain_text = true;
+            result.push_back(format);
+        } else if (IsFilesFormat(format)) {
+            result.push_back(format);
+        }
+    }
+    if (!has_plain_text) {
+        // Plain text is absent, so the body can only come from HTML or RTF.
+        const std::wstring text = SearchPartsFromFormats(data).body;
+        if (text.empty()) {
+            return std::nullopt;
+        }
+        result.insert(result.begin(), UnicodeTextFormat(text));
+    }
     return result;
 }
 
