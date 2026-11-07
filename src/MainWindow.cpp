@@ -173,10 +173,6 @@ constexpr DWORD kTrayReshowWindowMs = 300;
 // Space between the tray icon and the popup opened from it.
 constexpr int kTrayPopupGapDip = 6;
 
-// Timers of this window only; the IDs stay clear of AppConstants::Timer's
-// sequence, whose timers share the window.
-constexpr UINT_PTR kPopupDeactivatedTimer = 101;
-constexpr UINT_PTR kRevealPopupTimer = 102;
 // How long an open waits for its history query before showing the lists
 // it has. A free storage worker answers in a few milliseconds.
 constexpr UINT kRevealPopupFallbackMs = 100;
@@ -571,11 +567,10 @@ void MainWindow::LayoutHistoryControls() {
     GetClientRect(&client);
     const SearchHeaderLayout::Metrics headerMetrics =
         SearchHeaderLayout::ForDpi(UiFont::DpiForWindow(m_hWnd));
-    const int historyItemHeight = SearchHeaderLayout::Scale(
-        AppConstants::UI::kHistoryItemHeight,
-        UiFont::DpiForWindow(m_hWnd)
-    );
     m_historyListControls.RefreshItemHeights();
+    // Footer buttons and the minimum pins height follow the rows, which grow
+    // with the system text size.
+    const int historyItemHeight = m_historyListControls.ItemHeightPixels();
     const int margin = headerMetrics.windowMargin;
     const int width = std::max(1L, client.right - 2 * margin);
     // The search's own visibility: the popup is laid out while still hidden
@@ -1962,7 +1957,7 @@ void MainWindow::HideMainWindow() {
     m_popupVisible = false;
     // Closed before its query returned: it must not appear afterwards.
     m_revealPending = false;
-    KillTimer(kRevealPopupTimer);
+    KillTimer(AppConstants::Timer::kRevealPopup);
     HidePreview();
     ShowWindow(SW_HIDE);
 }
@@ -2519,7 +2514,7 @@ LRESULT MainWindow::OnActivateApp(UINT, WPARAM wParam, LPARAM, BOOL& handled) {
     // Activation is still moving. Hiding the popup inside it lets Windows
     // pick a window to activate itself; a timer also runs after the hook's
     // and the tray's posted messages, which may already have closed it.
-    ::SetTimer(m_hWnd, kPopupDeactivatedTimer, USER_TIMER_MINIMUM, nullptr);
+    ::SetTimer(m_hWnd, AppConstants::Timer::kPopupDeactivated, USER_TIMER_MINIMUM, nullptr);
     return 0;
 }
 
@@ -2668,16 +2663,16 @@ LRESULT MainWindow::OnTimer(UINT, WPARAM wParam, LPARAM, BOOL& handled) {
         ShowPreviewForCandidate();
         return 0;
     }
-    if (wParam == kRevealPopupTimer) {
+    if (wParam == AppConstants::Timer::kRevealPopup) {
         handled = TRUE;
         // The storage worker is busy: show the lists as they are rather
         // than keep the user waiting.
         RevealPopup();
         return 0;
     }
-    if (wParam == kPopupDeactivatedTimer) {
+    if (wParam == AppConstants::Timer::kPopupDeactivated) {
         handled = TRUE;
-        KillTimer(kPopupDeactivatedTimer);
+        KillTimer(AppConstants::Timer::kPopupDeactivated);
         // Menus and dialogs run their own loops, which fire this timer too.
         if (m_popupVisible && !m_modalShowing && !m_trayMenuShowing && !m_exiting &&
             !IsForegroundOnThisThread()) {
@@ -2920,7 +2915,7 @@ void MainWindow::ShowMainWindow(PopupPosition popup_position) {
     // its search. The popup appears once this open's query has replaced
     // them, so its first frame is current.
     m_revealPending = true;
-    ::SetTimer(m_hWnd, kRevealPopupTimer, kRevealPopupFallbackMs, nullptr);
+    ::SetTimer(m_hWnd, AppConstants::Timer::kRevealPopup, kRevealPopupFallbackMs, nullptr);
     ApplyPendingState();
 }
 
@@ -2929,7 +2924,7 @@ void MainWindow::RevealPopup() {
         return;
     }
     m_revealPending = false;
-    KillTimer(kRevealPopupTimer);
+    KillTimer(AppConstants::Timer::kRevealPopup);
     ShowWindow(SW_SHOW);
     m_historyListControls.ResetScrollPositions();
     ForceForeground(m_hWnd);

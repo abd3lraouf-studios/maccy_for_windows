@@ -794,8 +794,12 @@ void HistoryRenderer::DrawHistoryItem(DRAWITEMSTRUCT* draw,
     }
 
     std::wstring shortcut;
-    if (item.pinned) shortcut = L"Ctrl+" + item.pin;
-    else if (m_unpinnedShortcutNumbers[static_cast<size_t>(index)] > 0) {
+    // Ctrl+1..9 paste unpinned items, so a pin keyed 1-9 by an older build
+    // has no shortcut until it is given another key.
+    const bool quick_paste_digit = item.pin.size() == 1 && item.pin[0] >= L'1' && item.pin[0] <= L'9';
+    if (item.pinned) {
+        if (!item.pin.empty() && !quick_paste_digit) shortcut = L"Ctrl+" + item.pin;
+    } else if (m_unpinnedShortcutNumbers[static_cast<size_t>(index)] > 0) {
         shortcut = L"Ctrl+" + std::to_wstring(
             m_unpinnedShortcutNumbers[static_cast<size_t>(index)]
         );
