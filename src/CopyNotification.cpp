@@ -113,6 +113,71 @@ bool RegisterAppUserModelId(const std::filesystem::path &folder) {
     return registered;
 }
 
+// Clicking a notification opens its app through shell:AppsFolder\<AppUserModelID>,
+// which only resolves when a Start menu shortcut carries that ID; otherwise
+// Windows reports it cannot find the app. Stamp the ID on the installer's
+// shortcut to this executable. A second launch hands off to the running copy,
+// which opens the popup.
+void StampStartMenuShortcuts() {
+    // PKEY_AppUserModel_ID, spelled out so no extra import library is needed.
+    constexpr PROPERTYKEY kAppUserModelIdKey{
+        {0x9F4C2855, 0x9F79, 0x4B39, {0xA8, 0xD0, 0xE1, 0xD4, 0x2D, 0xE1, 0xD5, 0xF3}}, 5};
+    std::wstring executable(MAX_PATH, L'\0');
+    const DWORD length = ::GetModuleFileNameW(nullptr, executable.data(), static_cast<DWORD>(executable.size()));
+    if (length == 0 || length >= executable.size()) {
+        return;
+    }
+    executable.resize(length);
+    PWSTR programs = nullptr;
+    const HRESULT result = ::SHGetKnownFolderPath(FOLDERID_Programs, KF_FLAG_DEFAULT, nullptr, &programs);
+    const std::filesystem::path root = SUCCEEDED(result) ? std::filesystem::path(programs) : std::filesystem::path{};
+    ::CoTaskMemFree(programs);
+    if (root.empty()) {
+        return;
+    }
+
+    const auto stamp = [&](const std::filesystem::path &link) {
+        CComPtr<IShellLinkW> shell_link;
+        if (link.extension() != L".lnk" || FAILED(shell_link.CoCreateInstance(CLSID_ShellLink))) {
+            return;
+        }
+        CComQIPtr<IPersistFile> file(shell_link);
+        CComQIPtr<IPropertyStore> store(shell_link);
+        std::wstring target(MAX_PATH, L'\0');
+        std::error_code error;
+        if (!file || !store || FAILED(file->Load(link.c_str(), STGM_READWRITE)) ||
+            FAILED(shell_link->GetPath(target.data(), static_cast<int>(target.size()), nullptr, 0)) ||
+            !std::filesystem::equivalent(target.c_str(), executable, error)) {
+            return;
+        }
+        PROPVARIANT current;
+        ::PropVariantInit(&current);
+        const bool stamped = SUCCEEDED(store->GetValue(kAppUserModelIdKey, &current)) &&
+            current.vt == VT_LPWSTR && ::lstrcmpW(current.pwszVal, kAppUserModelId) == 0;
+        ::PropVariantClear(&current);
+        if (stamped) {
+            return;
+        }
+        PROPVARIANT value{};
+        value.vt = VT_LPWSTR;
+        value.pwszVal = const_cast<wchar_t *>(kAppUserModelId);
+        if (SUCCEEDED(store->SetValue(kAppUserModelIdKey, value)) && SUCCEEDED(store->Commit())) {
+            file->Save(link.c_str(), TRUE);
+        }
+    };
+    // The installer puts the shortcut one folder down (Programs\maccy\maccy.lnk).
+    std::error_code error;
+    for (const auto &entry : std::filesystem::directory_iterator(root, error)) {
+        if (entry.is_directory(error)) {
+            for (const auto &child : std::filesystem::directory_iterator(entry.path(), error)) {
+                stamp(child.path());
+            }
+        } else {
+            stamp(entry.path());
+        }
+    }
+}
+
 // Decoded thumbnails are premultiplied BGRA, but DIB sources and some icons
 // leave alpha at zero; writing those with alpha would make them invisible.
 bool HasAlpha(HBITMAP bitmap) {
@@ -330,6 +395,7 @@ void ThreadMain(std::stop_token stop) {
         ToastNotifier notifier{nullptr};
         try {
             if (!folder.empty() && RegisterAppUserModelId(folder)) {
+                StampStartMenuShortcuts();
                 notifier = ToastNotificationManager::CreateToastNotifier(kAppUserModelId);
             }
         } catch (...) {
@@ -412,6 +478,9 @@ namespace CopyNotification {
 
 void Initialize(HWND owner) {
     Shutdown();
+    // Match the ID stamped on the Start menu shortcut, so Maccy's windows,
+    // its Start entry and its notifications are one app to the shell.
+    ::SetCurrentProcessExplicitAppUserModelID(kAppUserModelId);
     g_owner = owner;
     g_thread = std::jthread(ThreadMain);
 }
