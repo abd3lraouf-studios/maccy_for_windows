@@ -8,6 +8,7 @@
 #include <atlgdi.h>
 #include <atlwin.h>
 
+#include <array>
 #include <string>
 
 #include "PreviewDecoder.h"
@@ -47,8 +48,12 @@ public:
     HWND Window() const noexcept { return m_hWnd; }
 
 private:
+    static constexpr size_t kControlCount = 5;
+
     void ClearBitmap();
     bool UpdateFont(UINT dpi);
+    std::array<CWindow, kControlCount> Controls() const noexcept;
+    void LayoutControls(UINT dpi);
     void UpdateStatus(const ClipboardItem &item);
 
     LRESULT OnInitDialog(UINT, WPARAM, LPARAM, BOOL &handled);
@@ -69,6 +74,11 @@ private:
     CContainedWindowT<CButton> m_deleteButton;
     CBitmap m_bitmap;
     CFont m_font;
+    // Control rectangles as the dialog template placed them at m_templateDpi.
+    // DPI changes rescale from these, so moving between monitors never
+    // accumulates rounding error.
+    std::array<RECT, kControlCount> m_templateRects{};
+    UINT m_templateDpi = USER_DEFAULT_SCREEN_DPI;
     int m_bitmapWidth = 0;
     int m_bitmapHeight = 0;
     sqlite3_int64 m_itemId = 0;

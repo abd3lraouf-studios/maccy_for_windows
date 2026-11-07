@@ -172,6 +172,13 @@ std::optional<PreviewBitmap> CreateBitmapFromDib(
     if (result == GDI_ERROR || stop_token.stop_requested()) {
         return std::nullopt;
     }
+    // StretchDIBits writes alpha 0 for every source, including 32-bit DIBs
+    // with alpha, so the copy is opaque. Say so in the alpha byte, or
+    // AlphaBlend would draw nothing. Flush first: GDI may still be writing.
+    ::GdiFlush();
+    auto *pixels = static_cast<std::uint32_t *>(destination);
+    std::for_each(pixels, pixels + static_cast<size_t>(width) * height,
+                  [](std::uint32_t &pixel) { pixel |= 0xFF000000u; });
     return PreviewBitmap(bitmap.Detach(), static_cast<int>(width), static_cast<int>(height));
 }
 
