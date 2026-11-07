@@ -228,7 +228,7 @@ LRESULT PreviewWindow::OnInitDialog(UINT, WPARAM, LPARAM, BOOL &handled) {
 }
 
 bool PreviewWindow::UpdateFont(UINT dpi) {
-    HFONT font = UiFont::CreateSegoeUi(dpi, UiFont::kBodyPointSize);
+    HFONT font = UiFont::CreateUiFont(dpi, UiFont::kBodyPointSize);
     if (font == nullptr) {
         return false;
     }

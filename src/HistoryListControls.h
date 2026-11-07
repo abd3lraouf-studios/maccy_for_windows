@@ -80,6 +80,7 @@ protected:
     CContainedWindowT<CListBox> m_pinsList;
 
 private:
+    int TextRowHeightPixels(UINT dpi) const noexcept;
     CListBox &CurrentHistoryList() noexcept;
     bool IsConfigured() const noexcept;
 

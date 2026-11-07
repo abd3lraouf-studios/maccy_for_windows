@@ -39,15 +39,30 @@ void HistoryListControls::Configure(
     RefreshItemHeights();
 }
 
+namespace {
+
+// Space around the text in a row: kHistoryItemHeight minus the 16 px of the
+// default 9 pt font at 96 DPI.
+constexpr int kHistoryRowTextPadding = 6;
+
+} // namespace
+
+int HistoryListControls::TextRowHeightPixels(UINT dpi) const noexcept {
+    // Windows text scaling enlarges the font beyond the DPI-scaled row height.
+    // Grow the row with it so the text is never clipped.
+    const int line_height = m_renderer != nullptr ? m_renderer->LineHeight() : 0;
+    return std::max(SearchHeaderLayout::Scale(AppConstants::UI::kHistoryItemHeight, dpi),
+                    line_height + SearchHeaderLayout::Scale(kHistoryRowTextPadding, dpi));
+}
+
 int HistoryListControls::ItemHeightPixels() const noexcept {
     const HWND list = m_historyList.m_hWnd != nullptr ? m_historyList.m_hWnd : m_pinsList.m_hWnd;
-    const UINT dpi = UiFont::DpiForWindow(list);
-    return SearchHeaderLayout::Scale(AppConstants::UI::kHistoryItemHeight, dpi);
+    return TextRowHeightPixels(UiFont::DpiForWindow(list));
 }
 
 int HistoryListControls::RowHeightPixels(const CListBox &list, int row) const noexcept {
     const UINT dpi = UiFont::DpiForWindow(list.m_hWnd);
-    const int base_height = SearchHeaderLayout::Scale(AppConstants::UI::kHistoryItemHeight, dpi);
+    const int base_height = TextRowHeightPixels(dpi);
     if (row < 0 || m_items == nullptr) {
         return base_height;
     }

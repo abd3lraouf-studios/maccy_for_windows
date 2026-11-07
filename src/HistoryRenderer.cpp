@@ -105,15 +105,32 @@ bool HistoryRenderer::UpdateFonts(UINT dpi) {
     CFont boldFont;
     CFont italicFont;
     CFont underlineFont;
-    normalFont.Attach(UiFont::CreateSegoeUi(dpi, UiFont::kBodyPointSize));
-    smallFont.Attach(UiFont::CreateSegoeUi(dpi, UiFont::kSmallPointSize));
-    boldFont.Attach(UiFont::CreateSegoeUi(dpi, UiFont::kBodyPointSize, FW_BOLD));
-    italicFont.Attach(UiFont::CreateSegoeUi(dpi, UiFont::kBodyPointSize, FW_NORMAL, TRUE));
-    underlineFont.Attach(UiFont::CreateSegoeUi(dpi, UiFont::kBodyPointSize, FW_NORMAL, FALSE, TRUE));
+    normalFont.Attach(UiFont::CreateUiFont(dpi, UiFont::kBodyPointSize));
+    smallFont.Attach(UiFont::CreateUiFont(dpi, UiFont::kSmallPointSize));
+    boldFont.Attach(UiFont::CreateUiFont(dpi, UiFont::kBodyPointSize, FW_BOLD));
+    italicFont.Attach(UiFont::CreateUiFont(dpi, UiFont::kBodyPointSize, FW_NORMAL, TRUE));
+    underlineFont.Attach(UiFont::CreateUiFont(dpi, UiFont::kBodyPointSize, FW_NORMAL, FALSE, TRUE));
     if (normalFont.IsNull() || smallFont.IsNull() || boldFont.IsNull() ||
         italicFont.IsNull() || underlineFont.IsNull()) {
         return false;
     }
+
+    // Windows text scaling can make the body font larger than the DPI-scaled
+    // row and shortcut column, so both are sized from the font as well.
+    CDC measure;
+    if (!measure.CreateCompatibleDC(nullptr)) {
+        return false;
+    }
+    ScopedGdiObjectSelection measure_font(measure.m_hDC, normalFont);
+    TEXTMETRICW metrics{};
+    SIZE shortcut{};
+    // Pins are lower-case letters; "m" is the widest of them.
+    if (!measure.GetTextMetrics(&metrics) ||
+        !measure.GetTextExtent(L"Ctrl+m", -1, &shortcut)) {
+        return false;
+    }
+    m_lineHeight = metrics.tmHeight;
+    m_shortcutTextWidth = shortcut.cx;
 
     m_normalFont.DeleteObject();
     m_smallFont.DeleteObject();
@@ -147,6 +164,8 @@ void HistoryRenderer::Shutdown() {
     m_boldFont.DeleteObject();
     m_italicFont.DeleteObject();
     m_underlineFont.DeleteObject();
+    m_lineHeight = 0;
+    m_shortcutTextWidth = 0;
 
     m_iconCache.clear();
     m_iconLru.clear();
@@ -228,7 +247,8 @@ HistoryRenderer::HistoryItemLayout HistoryRenderer::LayoutHistoryItem(
     layout.background.left += kHistoryItemInset;
     layout.background.right -= kHistoryItemInset;
     layout.shortcut = row;
-    layout.shortcut.left = std::max(row.left, row.right - kHistoryItemRightPadding - kHistoryShortcutWidth);
+    const int shortcut_width = std::max(kHistoryShortcutWidth, m_shortcutTextWidth);
+    layout.shortcut.left = std::max(row.left, row.right - kHistoryItemRightPadding - shortcut_width);
     layout.shortcut.right = row.right - kHistoryItemRightPadding;
     int x = row.left + kHistoryItemLeftPadding;
     const int y = row.top + std::max<LONG>(0, ((row.bottom - row.top) - kHistoryItemSlot) / 2);
