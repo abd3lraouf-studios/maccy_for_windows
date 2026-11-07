@@ -342,8 +342,6 @@ enum SettingsControlId : int {
     kAPopupScreen = IDC_A_POPUP_SCREEN,
     kAResetPosition = IDC_A_RESET_POSITION,
     kAPinTo = IDC_A_PIN_TO,
-    kATheme = IDC_A_THEME,
-    kAThemeMode = IDC_A_THEME_MODE,
     kAImageHeight = IDC_A_IMAGE_HEIGHT,
     kAOpenPreview = IDC_A_OPEN_PREVIEW,
     kAPreviewDelay = IDC_A_PREVIEW_DELAY,
@@ -357,6 +355,9 @@ enum SettingsControlId : int {
     kAShowSpecial = IDC_A_SHOW_SPECIAL,
     kAShowIcons = IDC_A_SHOW_ICONS,
     kAShowSwatch = IDC_A_SHOW_SWATCH,
+
+    kTMode = IDC_T_MODE,
+    kTGallery = IDC_T_GALLERY,
 
     kSSaveFiles = IDC_S_SAVE_FILES,
     kSSaveImages = IDC_S_SAVE_IMAGES,
@@ -391,9 +392,10 @@ enum SettingsControlId : int {
 constexpr int kPageGeneral = 0;
 constexpr int kPageStorage = 1;
 constexpr int kPageAppearance = 2;
-constexpr int kPagePins = 3;
-constexpr int kPageIgnore = 4;
-constexpr int kPageAdvanced = 5;
+constexpr int kPageThemes = 3;
+constexpr int kPagePins = 4;
+constexpr int kPageIgnore = 5;
+constexpr int kPageAdvanced = 6;
 
 int ScaleFromDefaultDpi(int value, UINT dpi) {
     return MulDiv(value, static_cast<int>(dpi), USER_DEFAULT_SCREEN_DPI);
@@ -518,10 +520,11 @@ struct PageDefinition {
     UINT title_resource;
 };
 
-constexpr std::array<PageDefinition, AppConstants::SettingsUI::kPageCount> kPageDefinitions = {
+constexpr std::array<PageDefinition, kSettingsPageCount> kPageDefinitions = {
     PageDefinition{IDS_SETTINGS_GENERAL},
     PageDefinition{IDS_SETTINGS_STORAGE},
     PageDefinition{IDS_SETTINGS_APPEARANCE},
+    PageDefinition{IDS_SETTINGS_THEMES},
     PageDefinition{IDS_SETTINGS_PINS},
     PageDefinition{IDS_SETTINGS_IGNORE},
     PageDefinition{IDS_SETTINGS_ADVANCED},
@@ -694,7 +697,10 @@ LRESULT ThemedDialog::OnControlColor(UINT message, WPARAM wParam, LPARAM lParam,
         handled = FALSE;
         return 0;
     }
-    dc.SetTextColor(enabled ? palette.text : palette.muted);
+    // The Themes page hint is secondary text under its field, like a
+    // placeholder, so it takes the muted colour.
+    const bool hint = message == WM_CTLCOLORSTATIC && ::GetDlgCtrlID(control) == IDC_T_MODE_HINT;
+    dc.SetTextColor(enabled && !hint ? palette.text : palette.muted);
     dc.SetBkColor(field ? palette.surface : palette.window);
     return reinterpret_cast<LRESULT>(field ? Theme::SurfaceBrush() : Theme::WindowBrush());
 }
@@ -967,9 +973,7 @@ void SettingsWindow::LocalizeControls() {
     SetLocalizedText(appearance, IDC_A_SCREEN_LABEL, IDS_A_SCREEN);
     SetLocalizedText(appearance, IDC_A_RESET_POSITION, IDS_A_RESET_POSITION);
     SetLocalizedText(appearance, IDC_A_PIN_TO_LABEL, IDS_A_PIN_TO);
-    SetLocalizedText(appearance, IDC_A_THEME_LABEL, IDS_A_THEME);
     SetLocalizedText(appearance, IDC_A_IMAGE_HEIGHT_LABEL, IDS_A_IMAGE_HEIGHT);
-    SetLocalizedText(appearance, IDC_A_THEME_MODE_LABEL, IDS_A_THEME_MODE);
     SetLocalizedText(appearance, IDC_A_OPEN_PREVIEW, IDS_A_AUTO_PREVIEW);
     SetLocalizedText(appearance, IDC_A_PREVIEW_DELAY_LABEL, IDS_A_PREVIEW_DELAY);
     SetLocalizedText(appearance, IDC_A_HIGHLIGHT_LABEL, IDS_A_HIGHLIGHT);
@@ -981,6 +985,10 @@ void SettingsWindow::LocalizeControls() {
     SetLocalizedText(appearance, IDC_A_SHOW_ICONS, IDS_A_SHOW_ICONS);
     SetLocalizedText(appearance, IDC_A_SHOW_SWATCH, IDS_A_SHOW_SWATCH);
     SetLocalizedText(appearance, IDC_A_SHOW_FOOTER, IDS_A_SHOW_FOOTER);
+
+    const CWindow themes = m_pages[kPageThemes]->Window();
+    SetLocalizedText(themes, IDC_T_MODE_LABEL, IDS_T_MODE);
+    SetLocalizedText(themes, IDC_T_MODE_HINT, IDS_T_MODE_HINT);
 
     const CWindow storage = m_pages[kPageStorage]->Window();
     SetLocalizedText(storage, IDC_S_SAVE_LABEL, IDS_S_SAVE);
@@ -1165,6 +1173,8 @@ void SettingsWindow::BindControls() {
     m_aSearchVisibility = get(kPageAppearance, kASearchVisibility);
     m_aShowTitle = get(kPageAppearance, kAShowTitle);
 
+    m_tGallery.Attach(get(kPageThemes, kTGallery));
+
     m_sHistorySize = get(kPageStorage, kSHistorySize);
     m_sStorageSize = get(kPageStorage, kSStorageSize);
     m_sCurrentSize = get(kPageStorage, kSCurrentSize);
@@ -1189,15 +1199,8 @@ void SettingsWindow::BindControls() {
     AddComboItem(pinTo, Localization::Text(IDS_PIN_TOP).c_str());
     AddComboItem(pinTo, Localization::Text(IDS_PIN_BOTTOM).c_str());
 
-    // Indexed by ThemeFamily; the names are proper names, not translated.
-    CComboBox theme(get(kPageAppearance, kATheme).m_hWnd);
-    for (int family = 0; family < kThemeFamilyCount; ++family) {
-        const std::wstring name(Theme::FamilyName(static_cast<ThemeFamily>(family)));
-        AddComboItem(theme, name.c_str());
-    }
-
     // Indexed by ThemeMode.
-    CComboBox themeMode(get(kPageAppearance, kAThemeMode).m_hWnd);
+    CComboBox themeMode(get(kPageThemes, kTMode).m_hWnd);
     AddComboItem(themeMode, Localization::Text(IDS_THEME_MODE_SYSTEM).c_str());
     AddComboItem(themeMode, Localization::Text(IDS_THEME_MODE_LIGHT).c_str());
     AddComboItem(themeMode, Localization::Text(IDS_THEME_MODE_DARK).c_str());
@@ -1289,7 +1292,7 @@ void SettingsWindow::ApplyThemeColors() {
 }
 
 void SettingsWindow::SetPage(int page) {
-    m_currentPage = std::clamp(page, 0, AppConstants::SettingsUI::kPageCount - 1);
+    m_currentPage = std::clamp(page, 0, kSettingsPageCount - 1);
     if (m_tabs.m_hWnd != nullptr) {
         m_tabs.SetCurSel(m_currentPage);
     }
@@ -1355,6 +1358,13 @@ void SettingsWindow::LoadAppearanceControls() {
     UpdateDependencies();
 }
 
+void SettingsWindow::LoadThemesControls() {
+    auto &page = *m_pages[kPageThemes];
+    page.LoadSettings(m_settings);
+    page.ExchangeSettings(DDX_LOAD);
+    m_tGallery.SetSelection(m_settings.theme);
+}
+
 void SettingsWindow::UpdateDependencies() {
     UpdateBehaviorHint(
         m_gBehaviorHint,
@@ -1394,6 +1404,7 @@ void SettingsWindow::LoadControlsFromSettings() {
     m_loading = true;
     LoadGeneralControls();
     LoadAppearanceControls();
+    LoadThemesControls();
     LoadStorageControls();
     LoadAdvancedControls();
 
@@ -1534,6 +1545,11 @@ void SettingsWindow::SaveCurrentPage() {
             );
             break;
         }
+        case kPageThemes:
+            m_pages[kPageThemes]->AttachSettings(m_settings);
+            m_pages[kPageThemes]->ExchangeSettings(DDX_SAVE);
+            m_settings.theme = m_tGallery.Selection();
+            break;
         case kPageStorage:
             m_pages[kPageStorage]->AttachSettings(m_settings);
             m_pages[kPageStorage]->ExchangeSettings(DDX_SAVE);

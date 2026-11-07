@@ -23,7 +23,11 @@
 #include "Settings.h"
 #include "ClipboardData.h"
 #include "StorageWorker.h"
+#include "ThemeGallery.h"
 #include "resource.h"
+
+// The Settings tabs, in order; SettingsWindow.cpp pairs each with its title.
+constexpr int kSettingsPageCount = 7;
 
 // Palette painting shared by the Settings window, its pages and its modal
 // dialogs: chain it into each message map. Colours come from Theme::Current()
@@ -237,7 +241,6 @@ protected:
     int m_menuIconIndex = 0;
     int m_searchVisibilityIndex = 0;
     int m_sortByIndex = 0;
-    int m_themeIndex = 0;
     int m_themeModeIndex = 0;
 };
 
@@ -285,7 +288,7 @@ public:
                 : settings.menu_icon == L"scissors" ? 2
                 : settings.menu_icon == L"paperclip" ? 3 : 0;
             this->m_searchVisibilityIndex = static_cast<int>(settings.search_visibility);
-            this->m_themeIndex = std::clamp(static_cast<int>(settings.theme), 0, kThemeFamilyCount - 1);
+        } else if constexpr (ResourceId == IDD_PAGE_THEMES) {
             this->m_themeModeIndex = std::clamp(
                 static_cast<int>(settings.theme_mode), 0, static_cast<int>(ThemeMode::Dark));
         } else if constexpr (ResourceId == IDD_PAGE_STORAGE) {
@@ -312,12 +315,6 @@ public:
             if ((nCtlID == (UINT)-1) || (nCtlID == IDC_A_PIN_TO))
                 this->template DDX_Index<WTL::CComboBox>(
                     IDC_A_PIN_TO, this->m_pinPositionIndex, bSaveAndValidate);
-            if ((nCtlID == (UINT)-1) || (nCtlID == IDC_A_THEME))
-                this->template DDX_Index<WTL::CComboBox>(
-                    IDC_A_THEME, this->m_themeIndex, bSaveAndValidate);
-            if ((nCtlID == (UINT)-1) || (nCtlID == IDC_A_THEME_MODE))
-                this->template DDX_Index<WTL::CComboBox>(
-                    IDC_A_THEME_MODE, this->m_themeModeIndex, bSaveAndValidate);
             DDX_CHECK(IDC_A_OPEN_PREVIEW, this->m_settings->open_preview_automatically)
             if ((nCtlID == (UINT)-1) || (nCtlID == IDC_A_HIGHLIGHT))
                 this->template DDX_Index<WTL::CComboBox>(
@@ -335,6 +332,11 @@ public:
             DDX_CHECK(IDC_A_SHOW_SPECIAL, this->m_settings->show_special_symbols)
             DDX_CHECK(IDC_A_SHOW_ICONS, this->m_settings->show_application_icons)
             DDX_CHECK(IDC_A_SHOW_SWATCH, this->m_settings->show_hex_color_swatch)
+        } else if constexpr (ResourceId == IDD_PAGE_THEMES) {
+            // The family comes from the gallery, which has no DDX of its own.
+            if ((nCtlID == (UINT)-1) || (nCtlID == IDC_T_MODE))
+                this->template DDX_Index<WTL::CComboBox>(
+                    IDC_T_MODE, this->m_themeModeIndex, bSaveAndValidate);
         } else if constexpr (ResourceId == IDD_PAGE_STORAGE) {
             DDX_CHECK(IDC_S_SAVE_FILES, this->m_settings->save_files)
             DDX_CHECK(IDC_S_SAVE_IMAGES, this->m_settings->save_images)
@@ -379,8 +381,7 @@ public:
                 std::clamp(this->m_menuIconIndex, 0, 3))];
             this->m_settings->search_visibility = static_cast<SearchVisibility>(
                 std::max(0, this->m_searchVisibilityIndex));
-            this->m_settings->theme = static_cast<ThemeFamily>(
-                std::clamp(this->m_themeIndex, 0, kThemeFamilyCount - 1));
+        } else if constexpr (ResourceId == IDD_PAGE_THEMES) {
             this->m_settings->theme_mode = static_cast<ThemeMode>(
                 std::clamp(this->m_themeModeIndex, 0, static_cast<int>(ThemeMode::Dark)));
         } else if constexpr (ResourceId == IDD_PAGE_STORAGE) {
@@ -488,8 +489,6 @@ public:
         COMMAND_HANDLER(IDC_A_POPUP_POSITION, CBN_SELCHANGE, OnSettingChanged)
         COMMAND_HANDLER(IDC_A_POPUP_SCREEN, CBN_SELCHANGE, OnSettingChanged)
         COMMAND_HANDLER(IDC_A_PIN_TO, CBN_SELCHANGE, OnSettingChanged)
-        COMMAND_HANDLER(IDC_A_THEME, CBN_SELCHANGE, OnSettingChanged)
-        COMMAND_HANDLER(IDC_A_THEME_MODE, CBN_SELCHANGE, OnSettingChanged)
         COMMAND_HANDLER(IDC_A_IMAGE_HEIGHT, EN_KILLFOCUS, OnSettingChanged)
         COMMAND_HANDLER(IDC_A_OPEN_PREVIEW, BN_CLICKED, OnSettingChanged)
         COMMAND_HANDLER(IDC_A_PREVIEW_DELAY, EN_KILLFOCUS, OnSettingChanged)
@@ -503,6 +502,9 @@ public:
         COMMAND_HANDLER(IDC_A_SHOW_SPECIAL, BN_CLICKED, OnSettingChanged)
         COMMAND_HANDLER(IDC_A_SHOW_ICONS, BN_CLICKED, OnSettingChanged)
         COMMAND_HANDLER(IDC_A_SHOW_SWATCH, BN_CLICKED, OnSettingChanged)
+
+        COMMAND_HANDLER(IDC_T_MODE, CBN_SELCHANGE, OnSettingChanged)
+        COMMAND_HANDLER(IDC_T_GALLERY, ThemeGallery::kSelectionChanged, OnSettingChanged)
 
         COMMAND_HANDLER(IDC_S_SAVE_FILES, BN_CLICKED, OnSettingChanged)
         COMMAND_HANDLER(IDC_S_SAVE_IMAGES, BN_CLICKED, OnSettingChanged)
@@ -542,6 +544,7 @@ private:
     void LoadControlsFromSettings();
     void LoadGeneralControls();
     void LoadAppearanceControls();
+    void LoadThemesControls();
     void LoadStorageControls();
     void LoadAdvancedControls();
     void UpdateDependencies();
@@ -579,10 +582,11 @@ private:
     SettingsChangedCallback m_onChanged;
     UpdateCheckCallback m_onUpdateCheck;
     ThemedTabCtrl m_tabs;
-    std::array<std::unique_ptr<SettingsResourcePageBase>, AppConstants::SettingsUI::kPageCount> m_pages{
+    std::array<std::unique_ptr<SettingsResourcePageBase>, kSettingsPageCount> m_pages{
         std::make_unique<SettingsResourcePage<IDD_PAGE_GENERAL>>(),
         std::make_unique<SettingsResourcePage<IDD_PAGE_STORAGE>>(),
         std::make_unique<SettingsResourcePage<IDD_PAGE_APPEARANCE>>(),
+        std::make_unique<SettingsResourcePage<IDD_PAGE_THEMES>>(),
         std::make_unique<SettingsResourcePage<IDD_PAGE_PINS>>(),
         std::make_unique<SettingsResourcePage<IDD_PAGE_IGNORE>>(),
         std::make_unique<SettingsResourcePage<IDD_PAGE_ADVANCED>>()
@@ -624,6 +628,8 @@ private:
     CButton m_aShowSearch;
     CComboBox m_aSearchVisibility;
     CButton m_aShowTitle;
+
+    ThemeGallery m_tGallery;
 
     CEdit m_sHistorySize;
     CStatic m_sStorageSize;

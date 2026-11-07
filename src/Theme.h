@@ -35,6 +35,11 @@ struct Palette {
 bool Update(ThemeFamily family, ThemeMode mode);
 const Palette &Current() noexcept;
 
+// The palette a family resolves to in one variant, ignoring high contrast:
+// what Update would pick without it, so previews show exactly what the user
+// gets. "Windows" reads the current system accent.
+Palette Preview(ThemeFamily family, bool dark);
+
 // Owned here and rebuilt by Update: return them from WM_CTLCOLOR* freely.
 HBRUSH WindowBrush() noexcept;
 HBRUSH SurfaceBrush() noexcept;
