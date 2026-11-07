@@ -79,6 +79,8 @@ public:
         MESSAGE_HANDLER(WM_DESTROY, OnDestroy)
         MESSAGE_HANDLER(AppConstants::kTrayIconMessage, OnTrayIcon)
         MESSAGE_HANDLER(WM_DISPLAYCHANGE, OnDisplayChange)
+        MESSAGE_HANDLER(WM_SETTINGCHANGE, OnSettingChange)
+        MESSAGE_HANDLER(m_taskbarCreatedMessage, OnTaskbarCreated)
         MESSAGE_HANDLER(AppConstants::kUiUpdateMessage, OnUiUpdate)
         MESSAGE_HANDLER(WM_CLIPBOARDUPDATE, OnClipboardUpdate)
         MESSAGE_HANDLER(AppConstants::kPreviewWorkerResultMessage, OnPreviewWorkerResult)
@@ -281,6 +283,8 @@ private:
     LRESULT OnImeEnd(UINT, WPARAM, LPARAM, BOOL& handled);
     LRESULT OnTrayIcon(UINT, WPARAM wParam, LPARAM lParam, BOOL&);
     LRESULT OnDisplayChange(UINT, WPARAM, LPARAM, BOOL& handled);
+    LRESULT OnSettingChange(UINT, WPARAM, LPARAM lParam, BOOL& handled);
+    LRESULT OnTaskbarCreated(UINT, WPARAM, LPARAM, BOOL& handled);
     LRESULT OnUiUpdate(UINT, WPARAM, LPARAM, BOOL& handled);
     LRESULT OnClipboardUpdate(UINT, WPARAM, LPARAM, BOOL& handled);
     LRESULT OnPreviewWorkerResult(UINT, WPARAM, LPARAM, BOOL& handled);
@@ -376,6 +380,9 @@ private:
 
     // Tray icon
     TrayIcon m_trayIcon;
+    // Broadcast once a shell's taskbar is up again; the new shell has none
+    // of the icons the old one showed.
+    const UINT m_taskbarCreatedMessage = ::RegisterWindowMessageW(L"TaskbarCreated");
 
     // State flags
     bool m_modalShowing = false;

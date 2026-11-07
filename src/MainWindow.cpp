@@ -2195,6 +2195,10 @@ bool MainWindow::InitializeHistoryControls() {
     }
 
     m_pasteController.SetOwner(m_hWnd);
+    if (m_taskbarCreatedMessage != 0) {
+        // An elevated Maccy must still hear a non-elevated shell restart.
+        ::ChangeWindowMessageFilterEx(m_hWnd, m_taskbarCreatedMessage, MSGFLT_ALLOW, nullptr);
+    }
     if (!m_applicationController.InitializeClipboard(m_hWnd, m_ignoredLists)) {
         m_initializationError = Localization::Text(IDS_MAIN_INIT_CLIPBOARD_ERROR);
         m_applicationController.Shutdown();
@@ -2704,6 +2708,31 @@ LRESULT MainWindow::OnTrayIcon(UINT, WPARAM wParam, LPARAM lParam, BOOL&) {
 LRESULT MainWindow::OnDisplayChange(UINT, WPARAM, LPARAM, BOOL& handled) {
     handled = FALSE;
     ForgetTrayIconLocation();
+    return 0;
+}
+
+LRESULT MainWindow::OnSettingChange(UINT, WPARAM, LPARAM lParam, BOOL& handled) {
+    handled = FALSE;
+    // The tray icon's light or dark variant follows the taskbar theme, which
+    // this area announces when it changes.
+    const auto *area = reinterpret_cast<LPCWSTR>(lParam);
+    if (area != nullptr && ::lstrcmpW(area, L"ImmersiveColorSet") == 0) {
+        RequestUiUpdate(AppConstants::UiUpdate::kTray);
+    }
+    return 0;
+}
+
+LRESULT MainWindow::OnTaskbarCreated(UINT, WPARAM, LPARAM, BOOL& handled) {
+    // A failed registration leaves 0, which would route WM_NULL here.
+    if (m_taskbarCreatedMessage == 0) {
+        handled = FALSE;
+        return 0;
+    }
+    handled = TRUE;
+    ForgetTrayIconLocation();
+    // TrayIcon still counts the old icon as added, so a modify would fail:
+    // add it again, version included.
+    AddTrayIcon();
     return 0;
 }
 
