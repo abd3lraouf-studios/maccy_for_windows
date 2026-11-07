@@ -304,17 +304,26 @@ LRESULT PreviewWindow::OnDrawItem(UINT, WPARAM, LPARAM lParam, BOOL &handled) {
     const int left = draw->rcItem.left + (draw->rcItem.right - draw->rcItem.left - width) / 2;
     const int top = draw->rcItem.top + (draw->rcItem.bottom - draw->rcItem.top - height) / 2;
 
+    // AlphaBlend only point-samples when it stretches, and HALFTONE StretchBlt
+    // ignores alpha. So blend the image over the window colour at its own size
+    // first, then stretch the opaque result with HALFTONE.
+    const RECT image_rect{0, 0, m_bitmapWidth, m_bitmapHeight};
     CDC source;
-    if (!source.CreateCompatibleDC(draw->hDC)) {
+    CDC flattened;
+    CBitmap flattened_bitmap;
+    if (!source.CreateCompatibleDC(draw->hDC) || !flattened.CreateCompatibleDC(draw->hDC) ||
+        !flattened_bitmap.CreateCompatibleBitmap(draw->hDC, m_bitmapWidth, m_bitmapHeight)) {
         return 0;
     }
-    ScopedGdiObjectSelection selected_bitmap(
-        source.m_hDC,
-        static_cast<HBITMAP>(m_bitmap)
-    );
-    if (!selected_bitmap.IsSelected()) {
+    ScopedGdiObjectSelection selected_bitmap(source.m_hDC, static_cast<HBITMAP>(m_bitmap));
+    ScopedGdiObjectSelection selected_flattened(flattened.m_hDC,
+                                                static_cast<HBITMAP>(flattened_bitmap));
+    if (!selected_bitmap.IsSelected() || !selected_flattened.IsSelected()) {
         return 0;
     }
+    flattened.FillRect(&image_rect, COLOR_WINDOW);
+    flattened.AlphaBlend(0, 0, m_bitmapWidth, m_bitmapHeight,
+                         source, 0, 0, m_bitmapWidth, m_bitmapHeight, PreviewBitmap::kBlend);
     ::SetStretchBltMode(draw->hDC, HALFTONE);
     ::SetBrushOrgEx(draw->hDC, 0, 0, nullptr);
     ::StretchBlt(
@@ -323,7 +332,7 @@ LRESULT PreviewWindow::OnDrawItem(UINT, WPARAM, LPARAM lParam, BOOL &handled) {
         top,
         width,
         height,
-        source,
+        flattened,
         0,
         0,
         m_bitmapWidth,

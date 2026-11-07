@@ -725,7 +725,9 @@ void HistoryRenderer::DrawHistoryItem(DRAWITEMSTRUCT* draw,
             if (memory.CreateCompatibleDC(draw->hDC)) {
                 ScopedGdiObjectSelection bitmap(memory.m_hDC, thumbnail->second.handle);
                 if (bitmap.IsSelected()) {
-                    ::BitBlt(draw->hDC, x, y, width, height, memory.m_hDC, 0, 0, SRCCOPY);
+                    // Blend over the row (window or selection colour) already painted here.
+                    ::AlphaBlend(draw->hDC, x, y, width, height, memory.m_hDC, 0, 0, width, height,
+                                 PreviewBitmap::kBlend);
                 }
             }
         } else {

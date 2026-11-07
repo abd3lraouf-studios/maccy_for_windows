@@ -8,7 +8,12 @@
 
 #include "ClipboardData.h"
 
+// A 32-bit top-down DIB section with premultiplied BGRA pixels. Draw it with
+// AlphaBlend and kBlend: BitBlt/StretchBlt ignore alpha and show transparent
+// areas as black.
 struct PreviewBitmap {
+    static constexpr BLENDFUNCTION kBlend{AC_SRC_OVER, 0, 255, AC_SRC_ALPHA};
+
     HBITMAP handle = nullptr;
     int width = 0;
     int height = 0;
