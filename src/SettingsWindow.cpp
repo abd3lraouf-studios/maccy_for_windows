@@ -52,7 +52,20 @@ void SetLocalizedText(CWindow window, int control_id, UINT resource_id) {
         return;
     }
     const std::wstring text = Localization::Text(resource_id);
-    AutoSizeTextControl(control).SetText(text);
+    // Push buttons keep their layout width as a minimum: the page grid gives
+    // them standard sizes, and shrinking to the caption makes them cramped.
+    // Labels and check boxes still fit their text.
+    int minimum_width = 0;
+    const LONG type = control.GetStyle() & BS_TYPEMASK;
+    wchar_t class_name[16]{};
+    ::GetClassNameW(control, class_name, 16);
+    if (::lstrcmpiW(class_name, L"Button") == 0 && (type == BS_PUSHBUTTON || type == BS_DEFPUSHBUTTON)) {
+        RECT rect{};
+        control.GetWindowRect(&rect);
+        minimum_width = ::MulDiv(rect.right - rect.left, USER_DEFAULT_SCREEN_DPI,
+                                 static_cast<int>(::GetDpiForWindow(control)));
+    }
+    AutoSizeTextControl(control).SetText(text, minimum_width);
 }
 
 void ShowSettingsRuntimeError(
