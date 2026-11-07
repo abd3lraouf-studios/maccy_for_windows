@@ -5,8 +5,11 @@
 
 namespace {
 
-// Letters omit a/q/v/w/z (common app/edit shortcuts). Digits expand capacity (L-16).
-constexpr std::wstring_view kSupportedKeys = L"0123456789bcdefghijklmnoprstuxy";
+// Letters omit a/q/v/w/z (common app/edit shortcuts). 1-9 are never offered:
+// Ctrl/Alt+1..9 quick-paste the Nth unpinned item (KeyboardHandler), so a pin
+// on those digits would be shadowed. 0 has no quick-paste meaning and adds one
+// more key (L-16).
+constexpr std::wstring_view kSupportedKeys = L"bcdefghijklmnoprstuxy0";
 
 wchar_t NormalizeKey(wchar_t key) {
     return static_cast<wchar_t>(std::towlower(key));

@@ -679,30 +679,38 @@ bool KeyboardHandler::HandlePopupShortcut(WPARAM key, const std::vector<Clipboar
     }
 
     if ((ctrl != alt) && !(GetKeyState(VK_LWIN) & 0x8000) && !(GetKeyState(VK_RWIN) & 0x8000)) {
-        int number = 0;
-        WPARAM digit_key = key;
+        // Main-row and numpad digits are the same shortcut (L-21).
+        WPARAM shortcut_key = key;
         if (key >= VK_NUMPAD0 && key <= VK_NUMPAD9) {
-            digit_key = static_cast<WPARAM>('0' + (key - VK_NUMPAD0));
+            shortcut_key = static_cast<WPARAM>('0' + (key - VK_NUMPAD0));
+        }
+        const auto paste_item = [&](size_t index) {
+            SetActiveHistoryItem(static_cast<int>(index), items, m_historyList, m_pinsList);
+            if (m_callbacks.paste) {
+                m_callbacks.paste(static_cast<int>(index));
+            }
+            return true;
+        };
+
+        // Precedence: Ctrl/Alt+1..9 always quick-paste the Nth unpinned item,
+        // whether pins sit above or below the history. New pins never get 1-9
+        // (PinKeys.cpp); a pin keyed 1-9 by an older build stays clickable but
+        // is not reachable from the keyboard until it is given another key.
+        if (shortcut_key >= '1' && shortcut_key <= '9') {
+            const int wanted = static_cast<int>(shortcut_key - '0');
+            int number = 0;
+            for (size_t i = 0; i < items.size(); ++i) {
+                if (!items[i].pinned && ++number == wanted) {
+                    return paste_item(i);
+                }
+            }
+            return false;
         }
         for (size_t i = 0; i < items.size(); ++i) {
             const auto& item = items[i];
-            bool matches = false;
-            if (item.pinned) {
-                if (item.pin.size() == 1) {
-                    const wchar_t pin = static_cast<wchar_t>(towupper(item.pin[0]));
-                    // Digit pins must accept both main-row and numpad keys (L-16 + L-21).
-                    matches = pin == static_cast<wchar_t>(key) ||
-                        (pin >= L'0' && pin <= L'9' && pin == static_cast<wchar_t>(digit_key));
-                }
-            } else {
-                matches = (++number <= 9 && digit_key == static_cast<WPARAM>('0' + number));
-            }
-            if (matches) {
-                SetActiveHistoryItem(static_cast<int>(i), items, m_historyList, m_pinsList);
-                if (m_callbacks.paste) {
-                    m_callbacks.paste(static_cast<int>(i));
-                }
-                return true;
+            if (item.pinned && item.pin.size() == 1 &&
+                static_cast<WPARAM>(towupper(item.pin[0])) == shortcut_key) {
+                return paste_item(i);
             }
         }
     }
