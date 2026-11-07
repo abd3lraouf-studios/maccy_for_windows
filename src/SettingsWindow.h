@@ -25,6 +25,59 @@
 #include "StorageWorker.h"
 #include "resource.h"
 
+// Palette painting shared by the Settings window, its pages and its modal
+// dialogs: chain it into each message map. Colours come from Theme::Current()
+// at paint time, so a theme change needs only a repaint. High contrast keeps
+// the system colours and native drawing.
+class ThemedDialog {
+public:
+    BEGIN_MSG_MAP(ThemedDialog)
+        MESSAGE_HANDLER(WM_CTLCOLORDLG, OnControlColor)
+        MESSAGE_HANDLER(WM_CTLCOLORSTATIC, OnControlColor)
+        MESSAGE_HANDLER(WM_CTLCOLORBTN, OnControlColor)
+        MESSAGE_HANDLER(WM_CTLCOLOREDIT, OnControlColor)
+        MESSAGE_HANDLER(WM_CTLCOLORLISTBOX, OnControlColor)
+        MESSAGE_HANDLER(WM_DRAWITEM, OnDrawItem)
+        NOTIFY_CODE_HANDLER(NM_CUSTOMDRAW, OnCustomDraw)
+    END_MSG_MAP()
+
+private:
+    LRESULT OnControlColor(UINT message, WPARAM wParam, LPARAM lParam, BOOL &handled);
+    LRESULT OnDrawItem(UINT, WPARAM, LPARAM lParam, BOOL &handled);
+    LRESULT OnCustomDraw(int, LPNMHDR header, BOOL &handled);
+};
+
+// SysTabControl32 has no dark visual style, and its native body would not
+// match the palette pages laid over it, so the strip and the body frame are
+// painted from the palette. High contrast keeps the native drawing.
+class ThemedTabCtrl : public CWindowImpl<ThemedTabCtrl, CTabCtrl> {
+public:
+    BEGIN_MSG_MAP(ThemedTabCtrl)
+        MESSAGE_HANDLER(WM_ERASEBKGND, OnEraseBackground)
+        MESSAGE_HANDLER(WM_PAINT, OnPaint)
+    END_MSG_MAP()
+
+    void Attach(HWND window);
+
+private:
+    LRESULT OnEraseBackground(UINT, WPARAM, LPARAM, BOOL &handled);
+    LRESULT OnPaint(UINT, WPARAM, LPARAM, BOOL &handled);
+};
+
+// The header keeps black text under the dark ItemsView style. Its
+// NM_CUSTOMDRAW goes to the list view rather than the page, hence a subclass.
+class ThemedListView : public CWindowImpl<ThemedListView, CListViewCtrl> {
+public:
+    BEGIN_MSG_MAP(ThemedListView)
+        NOTIFY_CODE_HANDLER(NM_CUSTOMDRAW, OnHeaderCustomDraw)
+    END_MSG_MAP()
+
+    void Attach(HWND window);
+
+private:
+    LRESULT OnHeaderCustomDraw(int, LPNMHDR header, BOOL &handled);
+};
+
 class HotkeyCaptureEdit : public CWindowImpl<HotkeyCaptureEdit, CEdit> {
 public:
     BEGIN_MSG_MAP(HotkeyCaptureEdit)
@@ -46,7 +99,7 @@ private:
     HotKeyConfig m_hotkey{};
 };
 
-class EditPinDialog : public CDialogImpl<EditPinDialog> {
+class EditPinDialog : public CDialogImpl<EditPinDialog>, public ThemedDialog {
 public:
     enum { IDD = IDD_EDIT_PIN };
 
@@ -63,6 +116,7 @@ public:
         MESSAGE_HANDLER(WM_INITDIALOG, OnInitDialog)
         COMMAND_ID_HANDLER(IDOK, OnOK)
         COMMAND_ID_HANDLER(IDCANCEL, OnCancel)
+        CHAIN_MSG_MAP(ThemedDialog)
     END_MSG_MAP()
 
 private:
@@ -86,7 +140,7 @@ private:
     CStatic m_hintLabel;
 };
 
-class EditIgnoreDialog : public CDialogImpl<EditIgnoreDialog> {
+class EditIgnoreDialog : public CDialogImpl<EditIgnoreDialog>, public ThemedDialog {
 public:
     enum { IDD = IDD_EDIT_IGNORE };
 
@@ -98,6 +152,7 @@ public:
         MESSAGE_HANDLER(WM_INITDIALOG, OnInitDialog)
         COMMAND_ID_HANDLER(IDOK, OnOK)
         COMMAND_ID_HANDLER(IDCANCEL, OnCancel)
+        CHAIN_MSG_MAP(ThemedDialog)
     END_MSG_MAP()
 
 private:
@@ -182,13 +237,16 @@ protected:
     int m_menuIconIndex = 0;
     int m_searchVisibilityIndex = 0;
     int m_sortByIndex = 0;
+    int m_themeIndex = 0;
+    int m_themeModeIndex = 0;
 };
 
 template <UINT ResourceId>
 class SettingsResourcePage final :
     public CDialogImpl<SettingsResourcePage<ResourceId>>,
     public WTL::CWinDataExchange<SettingsResourcePage<ResourceId>>,
-    public SettingsResourcePageBase {
+    public SettingsResourcePageBase,
+    public ThemedDialog {
 public:
     enum { IDD = ResourceId };
     using WTL::CWinDataExchange<SettingsResourcePage<ResourceId>>::DDX_Check;
@@ -227,6 +285,9 @@ public:
                 : settings.menu_icon == L"scissors" ? 2
                 : settings.menu_icon == L"paperclip" ? 3 : 0;
             this->m_searchVisibilityIndex = static_cast<int>(settings.search_visibility);
+            this->m_themeIndex = std::clamp(static_cast<int>(settings.theme), 0, kThemeFamilyCount - 1);
+            this->m_themeModeIndex = std::clamp(
+                static_cast<int>(settings.theme_mode), 0, static_cast<int>(ThemeMode::Dark));
         } else if constexpr (ResourceId == IDD_PAGE_STORAGE) {
             this->m_sortByIndex = settings.sort_by;
         }
@@ -251,6 +312,12 @@ public:
             if ((nCtlID == (UINT)-1) || (nCtlID == IDC_A_PIN_TO))
                 this->template DDX_Index<WTL::CComboBox>(
                     IDC_A_PIN_TO, this->m_pinPositionIndex, bSaveAndValidate);
+            if ((nCtlID == (UINT)-1) || (nCtlID == IDC_A_THEME))
+                this->template DDX_Index<WTL::CComboBox>(
+                    IDC_A_THEME, this->m_themeIndex, bSaveAndValidate);
+            if ((nCtlID == (UINT)-1) || (nCtlID == IDC_A_THEME_MODE))
+                this->template DDX_Index<WTL::CComboBox>(
+                    IDC_A_THEME_MODE, this->m_themeModeIndex, bSaveAndValidate);
             DDX_CHECK(IDC_A_OPEN_PREVIEW, this->m_settings->open_preview_automatically)
             if ((nCtlID == (UINT)-1) || (nCtlID == IDC_A_HIGHLIGHT))
                 this->template DDX_Index<WTL::CComboBox>(
@@ -312,18 +379,23 @@ public:
                 std::clamp(this->m_menuIconIndex, 0, 3))];
             this->m_settings->search_visibility = static_cast<SearchVisibility>(
                 std::max(0, this->m_searchVisibilityIndex));
+            this->m_settings->theme = static_cast<ThemeFamily>(
+                std::clamp(this->m_themeIndex, 0, kThemeFamilyCount - 1));
+            this->m_settings->theme_mode = static_cast<ThemeMode>(
+                std::clamp(this->m_themeModeIndex, 0, static_cast<int>(ThemeMode::Dark)));
         } else if constexpr (ResourceId == IDD_PAGE_STORAGE) {
             this->m_settings->sort_by = std::clamp(this->m_sortByIndex, 0, 2);
         }
         return TRUE;
     }
 
+    // The palette chain comes before the forwarding: check boxes' custom
+    // draw is answered here, other notifications go on to the owner.
     BEGIN_MSG_MAP(SettingsResourcePage)
         MESSAGE_HANDLER(WM_INITDIALOG, OnInitDialog)
+        CHAIN_MSG_MAP(ThemedDialog)
         MESSAGE_HANDLER(WM_COMMAND, OnOwnerMessage)
         MESSAGE_HANDLER(WM_NOTIFY, OnOwnerMessage)
-        MESSAGE_HANDLER(WM_CTLCOLOREDIT, OnEditColor)
-        MESSAGE_HANDLER(WM_CTLCOLORSTATIC, OnEditColor)
         MESSAGE_HANDLER(WM_LBUTTONDOWN, OnBlankClick)
     END_MSG_MAP()
 
@@ -336,28 +408,9 @@ private:
         return 0;
     }
 
-    LRESULT OnEditColor(UINT, WPARAM wParam, LPARAM lParam, BOOL &handled) {
-        const HWND edit = reinterpret_cast<HWND>(lParam);
-        const int controlId = edit != nullptr ? GetDlgCtrlID(edit) : 0;
-        if (controlId == IDC_G_OPEN_HOTKEY || controlId == IDC_G_PIN_HOTKEY ||
-            controlId == IDC_G_DELETE_HOTKEY || controlId == IDC_G_PREVIEW_HOTKEY) {
-            // The hotkey boxes are read-only edits, which Windows paints like
-            // static text on the page background. Paint them as input fields,
-            // with the system colours so high-contrast themes still apply.
-            const HDC dc = reinterpret_cast<HDC>(wParam);
-            SetBkColor(dc, GetSysColor(COLOR_WINDOW));
-            SetTextColor(dc, GetSysColor(COLOR_WINDOWTEXT));
-            handled = TRUE;
-            return reinterpret_cast<LRESULT>(GetSysColorBrush(COLOR_WINDOW));
-        }
-        handled = FALSE;
-        return 0;
-    }
-
+    // The page background (palette, or the native tab texture in high
+    // contrast) is set by SettingsWindow::ApplyThemeColors.
     LRESULT OnInitDialog(UINT, WPARAM, LPARAM, BOOL &handled) {
-        // Pages sit on a tab control; let them draw the tab body instead of
-        // the plain dialog colour.
-        EnableThemeDialogTexture(this->m_hWnd, ETDT_ENABLETAB);
         handled = TRUE;
         return TRUE;
     }
@@ -382,7 +435,10 @@ private:
     CWindow m_tabs;
 };
 
-class SettingsWindow : public CDialogImpl<SettingsWindow>, public CMessageFilter {
+class SettingsWindow :
+    public CDialogImpl<SettingsWindow>,
+    public CMessageFilter,
+    public ThemedDialog {
 public:
     enum { IDD = IDD_SETTINGS };
 
@@ -409,6 +465,7 @@ public:
         MESSAGE_HANDLER(WM_SIZE, OnSize)
         MESSAGE_HANDLER(WM_CLOSE, OnClose)
         MESSAGE_HANDLER(WM_DESTROY, OnDestroy)
+        MESSAGE_HANDLER(AppConstants::kThemeChangedMessage, OnThemeChanged)
 
         COMMAND_ID_HANDLER(IDCANCEL, OnCancelCommand)
         COMMAND_HANDLER(IDC_G_CHECK_NOW, BN_CLICKED, OnCheckUpdatesCommand)
@@ -431,6 +488,8 @@ public:
         COMMAND_HANDLER(IDC_A_POPUP_POSITION, CBN_SELCHANGE, OnSettingChanged)
         COMMAND_HANDLER(IDC_A_POPUP_SCREEN, CBN_SELCHANGE, OnSettingChanged)
         COMMAND_HANDLER(IDC_A_PIN_TO, CBN_SELCHANGE, OnSettingChanged)
+        COMMAND_HANDLER(IDC_A_THEME, CBN_SELCHANGE, OnSettingChanged)
+        COMMAND_HANDLER(IDC_A_THEME_MODE, CBN_SELCHANGE, OnSettingChanged)
         COMMAND_HANDLER(IDC_A_IMAGE_HEIGHT, EN_KILLFOCUS, OnSettingChanged)
         COMMAND_HANDLER(IDC_A_OPEN_PREVIEW, BN_CLICKED, OnSettingChanged)
         COMMAND_HANDLER(IDC_A_PREVIEW_DELAY, EN_KILLFOCUS, OnSettingChanged)
@@ -463,6 +522,7 @@ public:
         NOTIFY_HANDLER(IDC_I_LIST, LVN_KEYDOWN, OnIgnoreListKeyDown)
         NOTIFY_HANDLER(IDC_P_LIST, NM_DBLCLK, OnPinsListDoubleClick)
         NOTIFY_HANDLER(IDC_P_LIST, LVN_KEYDOWN, OnPinsListKeyDown)
+        CHAIN_MSG_MAP(ThemedDialog)
     END_MSG_MAP()
 
 private:
@@ -472,6 +532,7 @@ private:
     void BindControls();
     void ConfigureIgnoreList();
     void ConfigurePinsList();
+    void ApplyThemeColors();
 
     void SetPage(int page);
     void SetIgnorePage(int page);
@@ -511,12 +572,13 @@ private:
     LRESULT OnPinsListDoubleClick(int, LPNMHDR, BOOL &handled);
     LRESULT OnPinsListKeyDown(int, LPNMHDR, BOOL &handled);
     LRESULT OnDestroy(UINT, WPARAM, LPARAM, BOOL &handled);
+    LRESULT OnThemeChanged(UINT, WPARAM, LPARAM, BOOL &handled);
 
     StorageWorker &m_storage;
     CWindow m_owner;
     SettingsChangedCallback m_onChanged;
     UpdateCheckCallback m_onUpdateCheck;
-    CTabCtrl m_tabs;
+    ThemedTabCtrl m_tabs;
     std::array<std::unique_ptr<SettingsResourcePageBase>, AppConstants::SettingsUI::kPageCount> m_pages{
         std::make_unique<SettingsResourcePage<IDD_PAGE_GENERAL>>(),
         std::make_unique<SettingsResourcePage<IDD_PAGE_STORAGE>>(),
@@ -567,7 +629,7 @@ private:
     CStatic m_sStorageSize;
     CStatic m_sCurrentSize;
 
-    CTabCtrl m_ignoreTabs;
+    ThemedTabCtrl m_ignoreTabs;
     std::array<IgnorePage, AppConstants::SettingsUI::kIgnorePageCount> m_ignorePageObjects{
         IgnorePage{
             IgnoreListKind::Applications,
@@ -597,7 +659,7 @@ private:
     CImageListManaged m_ignoreImageList;
     int m_ignorePage = 0;
 
-    CListViewCtrl m_pList;
+    ThemedListView m_pList;
     std::vector<ClipboardItem> m_pins;
 
     CButton m_xIgnoreEvents;
