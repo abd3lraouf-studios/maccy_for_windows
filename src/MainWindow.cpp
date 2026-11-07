@@ -1,5 +1,6 @@
 #include "MainWindow.h"
 #include "Constants.h"
+#include "CopyNotification.h"
 #include "GdiScope.h"
 #include "Localization.h"
 #include "PinKeys.h"
@@ -169,6 +170,28 @@ std::pair<bool, bool> ResolvePasteAction(bool paste_default, bool plain_default,
 constexpr int kTrayHitPadDip = 12;
 constexpr int kTrayReshowPadDip = 40;
 constexpr DWORD kTrayReshowWindowMs = 300;
+// Space between the tray icon and the popup opened from it.
+constexpr int kTrayPopupGapDip = 6;
+
+// Timers of this window only; the IDs stay clear of AppConstants::Timer's
+// sequence, whose timers share the window.
+constexpr UINT_PTR kPopupDeactivatedTimer = 101;
+constexpr UINT_PTR kRevealPopupTimer = 102;
+// How long an open waits for its history query before showing the lists
+// it has. A free storage worker answers in a few milliseconds.
+constexpr UINT kRevealPopupFallbackMs = 100;
+
+bool IsMouseButtonDown() {
+    return (::GetAsyncKeyState(VK_LBUTTON) & 0x8000) != 0 ||
+        (::GetAsyncKeyState(VK_RBUTTON) & 0x8000) != 0 ||
+        (::GetAsyncKeyState(VK_MBUTTON) & 0x8000) != 0;
+}
+
+bool IsForegroundOnThisThread() {
+    const HWND foreground = ::GetForegroundWindow();
+    return foreground != nullptr &&
+        ::GetWindowThreadProcessId(foreground, nullptr) == ::GetCurrentThreadId();
+}
 
 int ScaleDip(HWND window, int dip) {
     const UINT dpi = window != nullptr ? UiFont::DpiForWindow(window) : USER_DEFAULT_SCREEN_DPI;
@@ -555,7 +578,9 @@ void MainWindow::LayoutHistoryControls() {
     m_historyListControls.RefreshItemHeights();
     const int margin = headerMetrics.windowMargin;
     const int width = std::max(1L, client.right - 2 * margin);
-    const bool header = m_search.IsWindowVisible() != FALSE;
+    // The search's own visibility: the popup is laid out while still hidden
+    // when it opens, and IsWindowVisible would report the hidden parent.
+    const bool header = (m_search.GetStyle() & WS_VISIBLE) != 0;
     int titleWidth = 0;
 
     if (header && m_settings.show_title) {
@@ -745,6 +770,29 @@ void MainWindow::RememberTrayIconLocation(WPARAM event_anchor) {
     const UINT dpi = DpiForMonitor(::MonitorFromPoint(cursor, MONITOR_DEFAULTTONEAREST));
     const int half = ::GetSystemMetricsForDpi(SM_CXSMICON, dpi) / 2;
     m_hostedTrayRect = RECT{cursor.x - half, cursor.y - half, cursor.x + half, cursor.y + half};
+}
+
+// Both spots are screen coordinates of a layout that is gone once the
+// monitors change or the shell restarts; the next click learns them again.
+void MainWindow::ForgetTrayIconLocation() {
+    m_hostedTrayRect.reset();
+    m_hasCachedTrayRect = false;
+}
+
+// A right-click on the icon anchors where it happened, and Explorer's
+// keyboard menu (Shift+F10, the Menu key) anchors on the icon while the
+// cursor is anywhere. A click forwarded by a replacement shell carries an
+// anchor away from the shell's icon; the cursor is on its bar instead.
+POINT MainWindow::TrayMenuPoint(WPARAM event_anchor) const {
+    const POINT anchor{GET_X_LPARAM(event_anchor), GET_Y_LPARAM(event_anchor)};
+    RECT shell_rect{};
+    if (m_trayIcon.GetRect(shell_rect) && !::IsRectEmpty(&shell_rect) &&
+        PointInInflatedRect(shell_rect, anchor, ScaleDip(m_hWnd, kTrayHitPadDip))) {
+        return anchor;
+    }
+    POINT cursor{};
+    ::GetCursorPos(&cursor);
+    return cursor;
 }
 
 bool MainWindow::IsTrayPoint(POINT screen_point, int dip_pad) const {
@@ -1029,7 +1077,8 @@ void MainWindow::PositionPopup(PopupPosition popup_position) {
             const RECT &screen = monitor_info.rcMonitor;
             const bool icon_in_top_half =
                 tray_rect.top + tray_rect.bottom < screen.top + screen.bottom;
-            y = icon_in_top_half ? tray_rect.bottom + 6 : tray_rect.top - height - 6;
+            const int gap = SearchHeaderLayout::Scale(kTrayPopupGapDip, dpi);
+            y = icon_in_top_half ? tray_rect.bottom + gap : tray_rect.top - height - gap;
         }
         break;
     }
@@ -1279,6 +1328,7 @@ void MainWindow::ApplyHistoryItems(
         } else if (!m_keyboardHandler.GetActiveItemId()) {
             HidePreview();
         }
+        RevealPopup();
     } catch (const std::exception& error) {
         m_loadingList = false;
         for (CListBox* list : {
@@ -1725,6 +1775,7 @@ void MainWindow::ClearHistory(bool all) {
         );
         return;
     }
+    CopyNotification::ClearHistory();
     if (clear_clipboard && !m_applicationController.ClearClipboard()) {
         ShowRuntimeError(
             m_hWnd,
@@ -1842,6 +1893,7 @@ void MainWindow::ExitApplication(ExitReason reason) {
             m_storage.DeleteUnpinned();
         } catch (...) {
         }
+        CopyNotification::ClearHistory();
     }
     if (reason == ExitReason::User &&
         m_settings.clear_on_quit &&
@@ -1908,6 +1960,9 @@ void MainWindow::HideMainWindow() {
     UninstallPopupDismissHooks();
     SaveWindowGeometry();
     m_popupVisible = false;
+    // Closed before its query returned: it must not appear afterwards.
+    m_revealPending = false;
+    KillTimer(kRevealPopupTimer);
     HidePreview();
     ShowWindow(SW_HIDE);
 }
@@ -1953,7 +2008,7 @@ void MainWindow::UpdateTrayIcon() {
     m_trayIcon.UpdateIcon(m_settings.menu_icon);
 }
 
-void MainWindow::ShowTrayMenu() {
+void MainWindow::ShowTrayMenu(POINT point) {
     UniqueMenu menu(::CreatePopupMenu());
     if (!menu) {
         return;
@@ -1975,10 +2030,8 @@ void MainWindow::ShowTrayMenu() {
     );
     AppendMenuW(menu.Get(), MF_SEPARATOR, 0, nullptr);
     AppendMenuW(menu.Get(), MF_STRING, kTrayCommandExit, exit_text.c_str());
-    POINT cursor{};
-    GetCursorPos(&cursor);
     SetForegroundWindow(m_hWnd);
-    TrackPopupMenu(menu.Get(), TPM_RIGHTBUTTON | TPM_LEFTALIGN, cursor.x, cursor.y, 0, m_hWnd, nullptr);
+    TrackPopupMenu(menu.Get(), TPM_RIGHTBUTTON | TPM_LEFTALIGN, point.x, point.y, 0, m_hWnd, nullptr);
     PostMessage(WM_NULL, 0, 0);
     m_trayMenuShowing = false;
 }
@@ -2171,6 +2224,10 @@ bool MainWindow::InitializeHistoryControls() {
     }
 
     m_pasteController.SetOwner(m_hWnd);
+    if (m_taskbarCreatedMessage != 0) {
+        // An elevated Maccy must still hear a non-elevated shell restart.
+        ::ChangeWindowMessageFilterEx(m_hWnd, m_taskbarCreatedMessage, MSGFLT_ALLOW, nullptr);
+    }
     if (!m_applicationController.InitializeClipboard(m_hWnd, m_ignoredLists)) {
         m_initializationError = Localization::Text(IDS_MAIN_INIT_CLIPBOARD_ERROR);
         m_applicationController.Shutdown();
@@ -2240,11 +2297,19 @@ LRESULT MainWindow::OnSize(UINT, WPARAM, LPARAM, BOOL& handled) {
 
 LRESULT MainWindow::OnDpiChanged(UINT, WPARAM wParam, LPARAM lParam, BOOL& handled) {
     handled = TRUE;
-    if (m_historyRenderer.UpdateFonts(HIWORD(wParam))) {
+    const UINT dpi = HIWORD(wParam);
+    if (m_historyRenderer.UpdateFonts(dpi)) {
         ApplyHistoryFonts();
     }
+    // PositionPopup sizes the popup for the monitor it moves it to, and that
+    // move sends this message; the suggested rect would scale it a second
+    // time. A drag between monitors still takes the suggestion.
+    RECT current{};
+    const bool sized_for_dpi = GetWindowRect(&current) &&
+        current.right - current.left == PopupWidth(dpi) &&
+        current.bottom - current.top == PopupHeight(dpi);
     const auto* suggested = reinterpret_cast<const RECT*>(lParam);
-    if (suggested != nullptr) {
+    if (suggested != nullptr && !sized_for_dpi) {
         SetWindowPos(nullptr, suggested->left, suggested->top,
                      suggested->right - suggested->left, suggested->bottom - suggested->top,
                      SWP_NOZORDER | SWP_NOACTIVATE);
@@ -2441,6 +2506,23 @@ LRESULT MainWindow::OnPopupDismiss(UINT, WPARAM wParam, LPARAM lParam, BOOL& han
     return 0;
 }
 
+// Alt+Tab, the Win key or another program taking focus would leave the
+// topmost popup on screen without keyboard focus. The preview, settings,
+// message boxes and IME windows run on this thread, so they never send this.
+LRESULT MainWindow::OnActivateApp(UINT, WPARAM wParam, LPARAM, BOOL& handled) {
+    handled = FALSE;
+    // A click elsewhere is the click-outside hook's call: it keeps the popup
+    // for a click on the tray icon, whose NIN_SELECT then closes it.
+    if (wParam != FALSE || !m_popupVisible || IsMouseButtonDown()) {
+        return 0;
+    }
+    // Activation is still moving. Hiding the popup inside it lets Windows
+    // pick a window to activate itself; a timer also runs after the hook's
+    // and the tray's posted messages, which may already have closed it.
+    ::SetTimer(m_hWnd, kPopupDeactivatedTimer, USER_TIMER_MINIMUM, nullptr);
+    return 0;
+}
+
 LRESULT MainWindow::OnHistoryIcons(UINT, WPARAM, LPARAM, BOOL& handled) {
     handled = TRUE;
     if (!m_historyRenderer.ApplyLoadedIcons() || !m_popupVisible ||
@@ -2586,6 +2668,23 @@ LRESULT MainWindow::OnTimer(UINT, WPARAM wParam, LPARAM, BOOL& handled) {
         ShowPreviewForCandidate();
         return 0;
     }
+    if (wParam == kRevealPopupTimer) {
+        handled = TRUE;
+        // The storage worker is busy: show the lists as they are rather
+        // than keep the user waiting.
+        RevealPopup();
+        return 0;
+    }
+    if (wParam == kPopupDeactivatedTimer) {
+        handled = TRUE;
+        KillTimer(kPopupDeactivatedTimer);
+        // Menus and dialogs run their own loops, which fire this timer too.
+        if (m_popupVisible && !m_modalShowing && !m_trayMenuShowing && !m_exiting &&
+            !IsForegroundOnThisThread()) {
+            HideMainWindow();
+        }
+        return 0;
+    }
     handled = FALSE;
     return 0;
 }
@@ -2669,11 +2768,42 @@ LRESULT MainWindow::OnTrayIcon(UINT, WPARAM wParam, LPARAM lParam, BOOL&) {
     case WM_CONTEXTMENU:
         RememberTrayIconLocation(wParam);
         m_pasteController.CaptureTargetWindow();
-        ShowTrayMenu();
+        ShowTrayMenu(TrayMenuPoint(wParam));
         break;
     default:
         break;
     }
+    return 0;
+}
+
+LRESULT MainWindow::OnDisplayChange(UINT, WPARAM, LPARAM, BOOL& handled) {
+    handled = FALSE;
+    ForgetTrayIconLocation();
+    return 0;
+}
+
+LRESULT MainWindow::OnSettingChange(UINT, WPARAM, LPARAM lParam, BOOL& handled) {
+    handled = FALSE;
+    // The tray icon's light or dark variant follows the taskbar theme, which
+    // this area announces when it changes.
+    const auto *area = reinterpret_cast<LPCWSTR>(lParam);
+    if (area != nullptr && ::lstrcmpW(area, L"ImmersiveColorSet") == 0) {
+        RequestUiUpdate(AppConstants::UiUpdate::kTray);
+    }
+    return 0;
+}
+
+LRESULT MainWindow::OnTaskbarCreated(UINT, WPARAM, LPARAM, BOOL& handled) {
+    // A failed registration leaves 0, which would route WM_NULL here.
+    if (m_taskbarCreatedMessage == 0) {
+        handled = FALSE;
+        return 0;
+    }
+    handled = TRUE;
+    ForgetTrayIconLocation();
+    // TrayIcon still counts the old icon as added, so a modify would fail:
+    // add it again, version included.
+    AddTrayIcon();
     return 0;
 }
 
@@ -2783,9 +2913,24 @@ void MainWindow::ShowMainWindow(PopupPosition popup_position) {
     RequestUiUpdate(AppConstants::UiUpdate::kHistory | AppConstants::UiUpdate::kLayout);
     PositionPopup(popup_position);
 
+    // Open before the query runs: its result schedules the auto-preview,
+    // which only an open popup accepts.
     m_popupVisible = true;
-    ShowWindow(SW_SHOW);
+    // The lists still hold the last session's history, possibly filtered by
+    // its search. The popup appears once this open's query has replaced
+    // them, so its first frame is current.
+    m_revealPending = true;
+    ::SetTimer(m_hWnd, kRevealPopupTimer, kRevealPopupFallbackMs, nullptr);
     ApplyPendingState();
+}
+
+void MainWindow::RevealPopup() {
+    if (!m_revealPending) {
+        return;
+    }
+    m_revealPending = false;
+    KillTimer(kRevealPopupTimer);
+    ShowWindow(SW_SHOW);
     m_historyListControls.ResetScrollPositions();
     ForceForeground(m_hWnd);
     FocusPopupForTyping();
@@ -2794,7 +2939,8 @@ void MainWindow::ShowMainWindow(PopupPosition popup_position) {
     // does not have to wait out the button release.
     InstallPopupDismissHooks();
 
-    UpdateWindow();
+    // Paint the lists too before returning to the message loop.
+    RedrawWindow(nullptr, nullptr, RDW_UPDATENOW | RDW_ALLCHILDREN);
     m_keyboardHandler.UpdateHistoryHoverFromCursor(
         m_items,
         m_historyListControls.HistoryListWindow(),
