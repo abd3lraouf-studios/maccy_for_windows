@@ -159,14 +159,14 @@ std::vector<unsigned char> CfHtml(std::string_view before, std::string_view frag
 }
 
 bool CheckHtmlFormatText() {
-    // The multibyte "é" before the fragment makes byte and character offsets
+    // The two-byte U+00E9 before the fragment makes byte and character offsets
     // differ; the blank line inside the fragment is content, not a header end.
     const std::wstring fragment = ClipboardRules::HtmlFormatText(CfHtml(
         "<html><body><p>Caf\xC3\xA9 menu</p><!--StartFragment-->",
         "First line\r\n\r\n<b>Second line \xC3\xA9</b>",
         "<!--EndFragment--></body></html>"
     ));
-    if (fragment.find(L"First line") != 0 || fragment.find(L"Second line é") == std::wstring::npos ||
+    if (fragment.find(L"First line") != 0 || fragment.find(L"Second line \u00e9") == std::wstring::npos ||
         fragment.find(L"Caf") != std::wstring::npos || fragment.find(L"Version") != std::wstring::npos) {
         return false;
     }
