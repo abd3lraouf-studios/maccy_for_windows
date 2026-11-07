@@ -96,6 +96,7 @@ set(MACCY_SOURCES
         "${MACCY_SOURCE_DIR}/Settings.cpp"
         "${MACCY_SOURCE_DIR}/SettingsWindow.cpp"
         "${MACCY_SOURCE_DIR}/Theme.cpp"
+        "${MACCY_SOURCE_DIR}/ThemeGallery.cpp"
         "${MACCY_SOURCE_DIR}/PreviewWindow.cpp"
         "${MACCY_SOURCE_DIR}/TrayIcon.cpp"
         "${MACCY_SOURCE_DIR}/UpdateChecker.cpp"
