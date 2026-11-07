@@ -120,7 +120,7 @@ std::wstring PinTextContent(const ClipboardItem &item) {
     return {};
 }
 
-// EditPinDialog 实现
+// EditPinDialog
 EditPinDialog::EditPinDialog(const AppSettings &settings, sqlite3_int64 item_id,
                              const std::vector<ClipboardItem> &pins, ClipboardItem item)
     : m_settings(settings), m_itemId(item_id), m_pins(pins), m_item(std::move(item)) {
@@ -150,7 +150,7 @@ LRESULT EditPinDialog::OnInitDialog(UINT, WPARAM, LPARAM, BOOL &handled) {
         m_originalContent = item.preview;
     }
 
-    // 只展示策略允许且当前项目可以使用的键位。
+    // Offer only the keys the pin policy allows for this item.
     for (const wchar_t ch : PinKeyPolicy::Available(m_pins, m_settings, m_itemId)) {
         std::wstring key(1, ch);
         m_keyCombo.AddString(key.c_str());
@@ -160,16 +160,16 @@ LRESULT EditPinDialog::OnInitDialog(UINT, WPARAM, LPARAM, BOOL &handled) {
         m_keyCombo.AddString(m_key.c_str());
     }
 
-    // 设置当前键位
+    // Select the current key.
     int keyIndex = m_keyCombo.FindStringExact(-1, m_key.c_str());
     if (keyIndex != CB_ERR) {
         m_keyCombo.SetCurSel(keyIndex);
     }
 
-    // 设置标题和内容
+    // Fill in the title and content.
     m_titleEdit.SetWindowText(m_title.c_str());
 
-    // 检查是否可编辑文本内容
+    // Only plain-text items can have their content edited.
     m_textEditable = item.has_text && !item.has_image && !item.has_files;
     if (m_textEditable) {
         m_contentEdit.SetWindowText(m_originalContent.c_str());
@@ -187,7 +187,7 @@ LRESULT EditPinDialog::OnInitDialog(UINT, WPARAM, LPARAM, BOOL &handled) {
 LRESULT EditPinDialog::OnOK(WORD, WORD, HWND, BOOL &handled) {
     handled = TRUE;
 
-    // 读取键位
+    // Read the key.
     int keyIndex = m_keyCombo.GetCurSel();
     if (keyIndex != CB_ERR) {
         wchar_t keyBuffer[256] = {};
@@ -195,7 +195,7 @@ LRESULT EditPinDialog::OnOK(WORD, WORD, HWND, BOOL &handled) {
         m_key = keyBuffer;
     }
 
-    // 验证键位
+    // Validate the key.
     std::wstring keyLower = m_key;
     std::transform(keyLower.begin(), keyLower.end(), keyLower.begin(), std::towlower);
     if (!PinKeyPolicy::IsValid(keyLower, m_pins, m_settings, m_itemId)) {
@@ -206,10 +206,10 @@ LRESULT EditPinDialog::OnOK(WORD, WORD, HWND, BOOL &handled) {
     }
     m_key = keyLower;
 
-    // 读取标题
+    // Read the title.
     m_title = ReadWindowText(m_titleEdit);
 
-    // 读取内容（如果可编辑）
+    // Read the content (when editable).
     if (m_textEditable) {
         m_content = ReadWindowText(m_contentEdit);
 
@@ -234,7 +234,7 @@ LRESULT EditPinDialog::OnCancel(WORD, WORD, HWND, BOOL &handled) {
     return 0;
 }
 
-// EditIgnoreDialog 实现
+// EditIgnoreDialog
 EditIgnoreDialog::EditIgnoreDialog(const std::wstring &value, const std::wstring &description, int ignore_page)
     : m_value(value), m_description(description), m_ignorePage(ignore_page) {
 }
@@ -254,7 +254,7 @@ LRESULT EditIgnoreDialog::OnInitDialog(UINT, WPARAM, LPARAM, BOOL &handled) {
     m_valueEdit.SetWindowText(m_value.c_str());
     m_descriptionLabel.SetWindowText(m_description.c_str());
 
-    // 如果是新建，设置默认值
+    // A new entry starts from an example value.
     if (m_value.empty()) {
         if (m_ignorePage == 1) {
             m_valueEdit.SetWindowText(L"xxx.yyy.zzz");
@@ -266,7 +266,7 @@ LRESULT EditIgnoreDialog::OnInitDialog(UINT, WPARAM, LPARAM, BOOL &handled) {
     m_valueEdit.SetSel(0, -1);
     m_valueEdit.SetFocus();
 
-    return FALSE; // 返回 FALSE 表示我们已经设置了焦点
+    return FALSE; // FALSE: focus has already been set.
 }
 
 LRESULT EditIgnoreDialog::OnOK(WORD, WORD, HWND, BOOL &handled) {
@@ -932,7 +932,7 @@ void SettingsWindow::SetPage(int page) {
         }
     }
 
-    // 如果切换到忽略页面，需要初始化当前忽略子标签页
+    // The ignore page shows one of its sub-pages; bring the current one up.
     if (m_currentPage == kPageIgnore) {
         SetIgnorePage(m_ignorePage);
     }
@@ -944,12 +944,12 @@ void SettingsWindow::SetIgnorePage(int page) {
         m_ignoreTabs.SetCurSel(m_ignorePage);
     }
 
-    // 隐藏所有子页面
+    // Hide every sub-page...
     for (size_t i = 0; i < m_ignorePageObjects.size(); ++i) {
         m_ignorePageObjects[i].Hide();
     }
 
-    // 显示当前子页面
+    // ...then show the current one.
     m_ignorePageObjects[static_cast<size_t>(m_ignorePage)].Show();
 }
 
