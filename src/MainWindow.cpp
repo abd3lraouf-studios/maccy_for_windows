@@ -169,6 +169,8 @@ std::pair<bool, bool> ResolvePasteAction(bool paste_default, bool plain_default,
 constexpr int kTrayHitPadDip = 12;
 constexpr int kTrayReshowPadDip = 40;
 constexpr DWORD kTrayReshowWindowMs = 300;
+// Space between the tray icon and the popup opened from it.
+constexpr int kTrayPopupGapDip = 6;
 
 int ScaleDip(HWND window, int dip) {
     const UINT dpi = window != nullptr ? UiFont::DpiForWindow(window) : USER_DEFAULT_SCREEN_DPI;
@@ -747,6 +749,29 @@ void MainWindow::RememberTrayIconLocation(WPARAM event_anchor) {
     m_hostedTrayRect = RECT{cursor.x - half, cursor.y - half, cursor.x + half, cursor.y + half};
 }
 
+// Both spots are screen coordinates of a layout that is gone once the
+// monitors change or the shell restarts; the next click learns them again.
+void MainWindow::ForgetTrayIconLocation() {
+    m_hostedTrayRect.reset();
+    m_hasCachedTrayRect = false;
+}
+
+// A right-click on the icon anchors where it happened, and Explorer's
+// keyboard menu (Shift+F10, the Menu key) anchors on the icon while the
+// cursor is anywhere. A click forwarded by a replacement shell carries an
+// anchor away from the shell's icon; the cursor is on its bar instead.
+POINT MainWindow::TrayMenuPoint(WPARAM event_anchor) const {
+    const POINT anchor{GET_X_LPARAM(event_anchor), GET_Y_LPARAM(event_anchor)};
+    RECT shell_rect{};
+    if (m_trayIcon.GetRect(shell_rect) && !::IsRectEmpty(&shell_rect) &&
+        PointInInflatedRect(shell_rect, anchor, ScaleDip(m_hWnd, kTrayHitPadDip))) {
+        return anchor;
+    }
+    POINT cursor{};
+    ::GetCursorPos(&cursor);
+    return cursor;
+}
+
 bool MainWindow::IsTrayPoint(POINT screen_point, int dip_pad) const {
     RECT tray{};
     if (!GetTrayIconRect(tray)) {
@@ -1029,7 +1054,8 @@ void MainWindow::PositionPopup(PopupPosition popup_position) {
             const RECT &screen = monitor_info.rcMonitor;
             const bool icon_in_top_half =
                 tray_rect.top + tray_rect.bottom < screen.top + screen.bottom;
-            y = icon_in_top_half ? tray_rect.bottom + 6 : tray_rect.top - height - 6;
+            const int gap = SearchHeaderLayout::Scale(kTrayPopupGapDip, dpi);
+            y = icon_in_top_half ? tray_rect.bottom + gap : tray_rect.top - height - gap;
         }
         break;
     }
@@ -1953,7 +1979,7 @@ void MainWindow::UpdateTrayIcon() {
     m_trayIcon.UpdateIcon(m_settings.menu_icon);
 }
 
-void MainWindow::ShowTrayMenu() {
+void MainWindow::ShowTrayMenu(POINT point) {
     UniqueMenu menu(::CreatePopupMenu());
     if (!menu) {
         return;
@@ -1975,10 +2001,8 @@ void MainWindow::ShowTrayMenu() {
     );
     AppendMenuW(menu.Get(), MF_SEPARATOR, 0, nullptr);
     AppendMenuW(menu.Get(), MF_STRING, kTrayCommandExit, exit_text.c_str());
-    POINT cursor{};
-    GetCursorPos(&cursor);
     SetForegroundWindow(m_hWnd);
-    TrackPopupMenu(menu.Get(), TPM_RIGHTBUTTON | TPM_LEFTALIGN, cursor.x, cursor.y, 0, m_hWnd, nullptr);
+    TrackPopupMenu(menu.Get(), TPM_RIGHTBUTTON | TPM_LEFTALIGN, point.x, point.y, 0, m_hWnd, nullptr);
     PostMessage(WM_NULL, 0, 0);
     m_trayMenuShowing = false;
 }
@@ -2669,11 +2693,17 @@ LRESULT MainWindow::OnTrayIcon(UINT, WPARAM wParam, LPARAM lParam, BOOL&) {
     case WM_CONTEXTMENU:
         RememberTrayIconLocation(wParam);
         m_pasteController.CaptureTargetWindow();
-        ShowTrayMenu();
+        ShowTrayMenu(TrayMenuPoint(wParam));
         break;
     default:
         break;
     }
+    return 0;
+}
+
+LRESULT MainWindow::OnDisplayChange(UINT, WPARAM, LPARAM, BOOL& handled) {
+    handled = FALSE;
+    ForgetTrayIconLocation();
     return 0;
 }
 

@@ -78,6 +78,7 @@ public:
         MESSAGE_HANDLER(WM_IME_ENDCOMPOSITION, OnImeEnd)
         MESSAGE_HANDLER(WM_DESTROY, OnDestroy)
         MESSAGE_HANDLER(AppConstants::kTrayIconMessage, OnTrayIcon)
+        MESSAGE_HANDLER(WM_DISPLAYCHANGE, OnDisplayChange)
         MESSAGE_HANDLER(AppConstants::kUiUpdateMessage, OnUiUpdate)
         MESSAGE_HANDLER(WM_CLIPBOARDUPDATE, OnClipboardUpdate)
         MESSAGE_HANDLER(AppConstants::kPreviewWorkerResultMessage, OnPreviewWorkerResult)
@@ -209,6 +210,8 @@ private:
     bool IsOurWindow(HWND window) const;
     bool GetTrayIconRect(RECT &rect) const;
     void RememberTrayIconLocation(WPARAM event_anchor);
+    void ForgetTrayIconLocation();
+    POINT TrayMenuPoint(WPARAM event_anchor) const;
     bool IsTrayPoint(POINT screen_point, int dip_pad) const;
     bool IsPointInPopupUi(POINT screen_point) const;
     bool ConsumeDuplicateTrayOpen(WPARAM click_anchor);
@@ -221,7 +224,7 @@ private:
 
     // Tray icon
     void UpdateTrayIcon();
-    void ShowTrayMenu();
+    void ShowTrayMenu(POINT point);
     void RemoveTrayIcon();
 
     // Settings
@@ -277,6 +280,7 @@ private:
     LRESULT OnImeStart(UINT, WPARAM, LPARAM, BOOL& handled);
     LRESULT OnImeEnd(UINT, WPARAM, LPARAM, BOOL& handled);
     LRESULT OnTrayIcon(UINT, WPARAM wParam, LPARAM lParam, BOOL&);
+    LRESULT OnDisplayChange(UINT, WPARAM, LPARAM, BOOL& handled);
     LRESULT OnUiUpdate(UINT, WPARAM, LPARAM, BOOL& handled);
     LRESULT OnClipboardUpdate(UINT, WPARAM, LPARAM, BOOL& handled);
     LRESULT OnPreviewWorkerResult(UINT, WPARAM, LPARAM, BOOL& handled);
