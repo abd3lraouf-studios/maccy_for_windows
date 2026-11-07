@@ -367,15 +367,8 @@ constexpr int kPagePins = 3;
 constexpr int kPageIgnore = 4;
 constexpr int kPageAdvanced = 5;
 
-UINT WindowDpi(CWindow window) {
-    if (window.m_hWnd != nullptr) {
-        CClientDC dc(window);
-        const int dpi = dc.GetDeviceCaps(LOGPIXELSX);
-        if (dpi > 0) {
-            return static_cast<UINT>(dpi);
-        }
-    }
-    return USER_DEFAULT_SCREEN_DPI;
+int ScaleFromDefaultDpi(int value, UINT dpi) {
+    return MulDiv(value, static_cast<int>(dpi), USER_DEFAULT_SCREEN_DPI);
 }
 
 // Fits pages over the display area of the tab control they belong to. They
@@ -483,8 +476,6 @@ void ConfigureListView(CListViewCtrl list, bool allow_label_editing, bool show_c
     list.SetExtendedListViewStyle(
         LVS_EX_FULLROWSELECT | LVS_EX_DOUBLEBUFFER
     );
-    while (list.DeleteColumn(0)) {
-    }
 }
 
 void AddListViewColumn(CListViewCtrl list, int index, int width, const wchar_t *title) {
@@ -804,12 +795,74 @@ void SettingsWindow::LayoutPages() {
         return;
     }
 
+    // The tab control fills the window, as in the template; after a DPI
+    // change only the window has been resized.
+    CRect client;
+    GetClientRect(&client);
+    m_tabs.SetWindowPos(nullptr, &client, SWP_NOZORDER | SWP_NOACTIVATE);
     FitPagesToTab(m_tabs, m_pages);
 
     // The ignore page holds a second tab control with its own pages.
     if (m_ignoreTabs.m_hWnd != nullptr) {
         FitPagesToTab(m_ignoreTabs, m_ignorePages);
     }
+}
+
+void SettingsWindow::ScaleForDpi(UINT old_dpi, UINT new_dpi) {
+    if (old_dpi == new_dpi || m_tabs.m_hWnd == nullptr) {
+        return;
+    }
+    const auto scale = [&](int value) {
+        return MulDiv(value, static_cast<int>(new_dpi), static_cast<int>(old_dpi));
+    };
+
+    LOGFONTW font_info{};
+    if (!CFontHandle(m_tabs.GetFont()).GetLogFont(&font_info)) {
+        return;
+    }
+    font_info.lfHeight = scale(font_info.lfHeight);
+    CFont font;
+    if (font.CreateFontIndirect(&font_info) == nullptr) {
+        return;
+    }
+    m_tabs.SetFont(font, FALSE);
+
+    // Every page's controls, including the ignore tab control and the ignore
+    // pages placed on the ignore page. LayoutPages then fits the pages
+    // themselves exactly.
+    const auto scale_controls = [&](CWindow page) {
+        for (CWindow control = page.GetWindow(GW_CHILD); control.m_hWnd != nullptr;
+             control = control.GetWindow(GW_HWNDNEXT)) {
+            CRect rect;
+            control.GetWindowRect(&rect);
+            page.ScreenToClient(&rect);
+            control.SetWindowPos(nullptr, scale(rect.left), scale(rect.top),
+                                 scale(rect.Width()), scale(rect.Height()),
+                                 SWP_NOZORDER | SWP_NOACTIVATE);
+            control.SetFont(font, FALSE);
+        }
+    };
+    for (const auto &page : m_pages) {
+        scale_controls(page->Window());
+    }
+    for (const auto &page : m_ignorePages) {
+        scale_controls(page->Window());
+    }
+
+    // Keep any widths the user dragged, only in the new DPI.
+    const int column_count = m_pList.GetHeader().GetItemCount();
+    for (int column = 0; column < column_count; ++column) {
+        m_pList.SetColumnWidth(column, scale(m_pList.GetColumnWidth(column)));
+    }
+    if (!m_ignoreImageList.IsNull()) {
+        const int icon_size = ScaleFromDefaultDpi(16, new_dpi);
+        m_ignoreImageList.SetIconSize(icon_size, icon_size);
+        // Re-attach so the list recomputes its row height.
+        CListViewCtrl(m_ignorePages[0]->Control(kIList)).SetImageList(m_ignoreImageList, LVSIL_SMALL);
+    }
+
+    // The controls now use the new font, so the previous one can go.
+    m_dpiFont.Attach(font.Detach());
 }
 
 void SettingsWindow::BindControls() {
@@ -885,8 +938,7 @@ void SettingsWindow::BindControls() {
 }
 
 void SettingsWindow::ConfigureIgnoreList() {
-    const UINT dpi = WindowDpi(CWindow(m_hWnd));
-    const int icon_size = MulDiv(16, static_cast<int>(dpi), USER_DEFAULT_SCREEN_DPI);
+    const int icon_size = ScaleFromDefaultDpi(16, m_dpi);
     if (m_ignoreImageList.IsNull()) {
         m_ignoreImageList.Create(
             icon_size,
@@ -903,7 +955,8 @@ void SettingsWindow::ConfigureIgnoreList() {
         CListViewCtrl list;
         list = m_ignorePages[index]->Control(kIList);
         ConfigureListView(list, index != 0, false);
-        AddListViewColumn(list, 0, 100, L"");
+        // IgnorePage::Refresh widens the single column to the list.
+        AddListViewColumn(list, 0, ScaleFromDefaultDpi(100, m_dpi), L"");
         if (index == 0 && !m_ignoreImageList.IsNull()) {
             list.SetImageList(m_ignoreImageList, LVSIL_SMALL);
         }
@@ -912,9 +965,9 @@ void SettingsWindow::ConfigureIgnoreList() {
 
 void SettingsWindow::ConfigurePinsList() {
     ConfigureListView(m_pList, false, true);
-    AddListViewColumn(m_pList, 0, 63, Localization::Text(IDS_P_KEY).c_str());
-    AddListViewColumn(m_pList, 1, 158, Localization::Text(IDS_P_TITLE).c_str());
-    AddListViewColumn(m_pList, 2, 300, Localization::Text(IDS_P_CONTENT).c_str());
+    AddListViewColumn(m_pList, 0, ScaleFromDefaultDpi(63, m_dpi), Localization::Text(IDS_P_KEY).c_str());
+    AddListViewColumn(m_pList, 1, ScaleFromDefaultDpi(158, m_dpi), Localization::Text(IDS_P_TITLE).c_str());
+    AddListViewColumn(m_pList, 2, ScaleFromDefaultDpi(300, m_dpi), Localization::Text(IDS_P_CONTENT).c_str());
 }
 
 void SettingsWindow::SetPage(int page) {
@@ -1344,6 +1397,12 @@ LRESULT SettingsWindow::OnInitDialog(UINT, WPARAM, LPARAM, BOOL &handled) {
         SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_FRAMECHANGED
     );
 
+    // Per-Monitor v2 rescales only a dialog's immediate children, but the
+    // pages here are dialogs of their own. OnDpiChanged scales the whole
+    // tree instead, and must be the only one doing it.
+    m_dpi = ::GetDpiForWindow(m_hWnd);
+    ::SetDialogDpiChangeBehavior(m_hWnd, DDC_DISABLE_ALL, DDC_DISABLE_ALL);
+
     CreateTabs();
     if (!CreatePageWindows()) {
         handled = FALSE;
@@ -1373,20 +1432,20 @@ BOOL SettingsWindow::PreTranslateMessage(MSG *message) {
 
 LRESULT SettingsWindow::OnDpiChanged(UINT, WPARAM wParam, LPARAM lParam, BOOL &handled) {
     handled = TRUE;
+    const UINT dpi = LOWORD(wParam);
+    // Scale the controls before resizing the window: the resize lays the
+    // tab controls and pages out, and that must use the new tab metrics.
+    ScaleForDpi(m_dpi, dpi);
+    m_dpi = dpi;
     const auto *suggested = reinterpret_cast<const RECT *>(lParam);
     if (suggested != nullptr) {
-        SetWindowPos(nullptr, suggested->left, suggested->top,
-                     suggested->right - suggested->left,
-                     suggested->bottom - suggested->top,
-                     SWP_NOZORDER | SWP_NOACTIVATE);
+        SetWindowPos(nullptr, suggested, SWP_NOZORDER | SWP_NOACTIVATE);
     }
-
     LayoutPages();
-    ConfigureIgnoreList();
-    ConfigurePinsList();
     if (m_currentPage == kPageIgnore) {
         m_ignorePageObjects[static_cast<size_t>(m_ignorePage)].Refresh();
     }
+    RedrawWindow(nullptr, nullptr, RDW_INVALIDATE | RDW_ERASE | RDW_ALLCHILDREN);
     return 0;
 }
 

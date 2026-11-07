@@ -476,6 +476,7 @@ private:
     void SetPage(int page);
     void SetIgnorePage(int page);
     void LayoutPages();
+    void ScaleForDpi(UINT old_dpi, UINT new_dpi);
 
     void LoadControlsFromSettings();
     void LoadGeneralControls();
@@ -534,6 +535,10 @@ private:
     bool m_destroying = false;
     bool m_updateCheckBusy = false;
     UniqueIcon m_windowIcon;
+    UINT m_dpi = USER_DEFAULT_SCREEN_DPI;
+    // Font for the current DPI once the window has moved to another DPI; the
+    // dialog manager owns the font the templates were created with.
+    CFont m_dpiFont;
 
     AppSettings m_settings{};
     StorageWorker::IgnoreLists m_ignoredLists;
