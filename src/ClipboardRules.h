@@ -66,7 +66,11 @@ std::wstring DecodeByteText(
     const std::vector<unsigned char> &bytes,
     size_t maximum_characters = std::wstring::npos
 );
+// Markup to text; `value` is HTML only, without a CF_HTML header.
 std::wstring StripHtml(std::wstring value);
+// Text of a raw "HTML Format" (CF_HTML) payload: its fragment, else its
+// document, located by the header's byte offsets.
+std::wstring HtmlFormatText(const std::vector<unsigned char> &bytes);
 std::wstring StripRtf(std::wstring_view value);
 std::wstring ExtractDropPaths(const std::vector<unsigned char> &bytes);
 std::vector<std::wstring> DecodeDropPaths(const std::vector<unsigned char> &bytes);

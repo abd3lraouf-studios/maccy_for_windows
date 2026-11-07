@@ -386,11 +386,6 @@ std::wstring DecodeByteText(
 }
 
 std::wstring StripHtml(std::wstring value) {
-    const size_t header_end = value.find(L"\r\n\r\n");
-    if (header_end != std::wstring::npos) {
-        value.erase(0, header_end + 4);
-    }
-
     // Drop script/style blocks before tag stripping (L-17).
     {
         std::wstring lower = Lower(value);
@@ -475,6 +470,50 @@ std::wstring StripHtml(std::wstring value) {
         result.push_back(character);
     }
     return TrimWhitespace(std::move(result));
+}
+
+std::wstring HtmlFormatText(const std::vector<unsigned char> &bytes) {
+    const size_t nul = std::find(bytes.begin(), bytes.end(), 0) - bytes.begin();
+    const std::string_view payload(reinterpret_cast<const char *>(bytes.data()), nul);
+    // The description header is "Key:value" lines ending at the first tag.
+    const size_t first_tag = payload.find('<');
+    const std::string_view header = payload.substr(0, first_tag);
+
+    // Header values are byte offsets into this UTF-8 payload. Missing, -1 or
+    // out-of-range values (seen in the wild) leave the range unusable.
+    const auto header_offset = [header](std::string_view key) -> std::optional<size_t> {
+        const size_t at = header.find(key);
+        if (at == std::string_view::npos) {
+            return std::nullopt;
+        }
+        size_t value = 0;
+        size_t digits = 0;
+        for (size_t index = at + key.size(); index < header.size() &&
+             header[index] >= '0' && header[index] <= '9'; ++index) {
+            if (++digits > 18) {
+                return std::nullopt;
+            }
+            value = value * 10 + static_cast<size_t>(header[index] - '0');
+        }
+        return digits > 0 ? std::optional<size_t>(value) : std::nullopt;
+    };
+    const auto range = [&](std::string_view start_key, std::string_view end_key)
+        -> std::optional<std::string_view> {
+        const auto start = header_offset(start_key);
+        const auto end = header_offset(end_key);
+        if (!start || !end || *start >= *end || *end > payload.size()) {
+            return std::nullopt;
+        }
+        return payload.substr(*start, *end - *start);
+    };
+
+    std::string_view html = first_tag == std::string_view::npos ? payload : payload.substr(first_tag);
+    if (const auto fragment = range("StartFragment:", "EndFragment:")) {
+        html = *fragment;
+    } else if (const auto document = range("StartHTML:", "EndHTML:")) {
+        html = *document;
+    }
+    return StripHtml(DecodeByteText(std::vector<unsigned char>(html.begin(), html.end())));
 }
 
 std::wstring StripRtf(std::wstring_view value) {
@@ -638,10 +677,9 @@ SearchParts SearchPartsFromFormats(const std::vector<ClipboardFormatData> &data)
         } else if (IsAnsiTextFormat(format) && accumulator.ansi_text.empty()) {
             accumulator.ansi_text = DecodeAnsiText(format.bytes);
         } else if (IsRichTextFormat(format) && accumulator.rich_text.empty()) {
-            const std::wstring decoded = DecodeByteText(format.bytes);
             accumulator.rich_text = EqualInsensitive(format.name, L"HTML Format")
-                ? StripHtml(decoded)
-                : StripRtf(decoded);
+                ? HtmlFormatText(format.bytes)
+                : StripRtf(DecodeByteText(format.bytes));
         } else if (IsFilesFormat(format) && accumulator.paths.empty()) {
             accumulator.paths = ExtractDropPaths(format.bytes);
         }
