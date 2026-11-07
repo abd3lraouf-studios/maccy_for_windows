@@ -82,6 +82,43 @@ std::optional<COLORREF> ParseHexColor(std::wstring_view text) {
     return RGB((value >> 16) & 0xFF, (value >> 8) & 0xFF, value & 0xFF);
 }
 
+bool HighContrastEnabled() {
+    HIGHCONTRASTW contrast{};
+    contrast.cbSize = sizeof(contrast);
+    return ::SystemParametersInfoW(SPI_GETHIGHCONTRAST, sizeof(contrast), &contrast, 0) != FALSE &&
+        (contrast.dwFlags & HCF_HIGHCONTRASTON) != 0;
+}
+
+COLORREF MixColors(COLORREF foreground, COLORREF background, int foreground_percent) {
+    const auto mix = [foreground_percent](int front, int back) {
+        return (front * foreground_percent + back * (100 - foreground_percent) + 50) / 100;
+    };
+    return RGB(mix(GetRValue(foreground), GetRValue(background)),
+               mix(GetGValue(foreground), GetGValue(background)),
+               mix(GetBValue(foreground), GetBValue(background)));
+}
+
+struct MatchColors {
+    COLORREF text;
+    COLORREF background;
+};
+
+// Colours of a search match drawn with HighlightMatch::Color, all taken from
+// the system colours so they follow the user's theme.
+MatchColors MatchHighlightColors(bool selected_row) {
+    // On the selection bar, the inverse of the bar stays visible in every theme.
+    if (selected_row) {
+        return {GetSysColor(COLOR_HIGHLIGHT), GetSysColor(COLOR_HIGHLIGHTTEXT)};
+    }
+    // High contrast themes only guarantee their own colour pairs to be legible.
+    if (HighContrastEnabled()) {
+        return {GetSysColor(COLOR_HIGHLIGHTTEXT), GetSysColor(COLOR_HIGHLIGHT)};
+    }
+    // A light tint of the selection colour marks a match without looking selected.
+    return {GetSysColor(COLOR_WINDOWTEXT),
+            MixColors(GetSysColor(COLOR_HIGHLIGHT), GetSysColor(COLOR_WINDOW), 25)};
+}
+
 } // namespace
 
 HistoryRenderer::HistoryRenderer(AppSettings& settings)
@@ -502,6 +539,7 @@ void HistoryRenderer::DrawTextWithHighlights(HDC dc, RECT rect, sqlite3_int64 it
 
     const int old_bk_mode = SetBkMode(dc, TRANSPARENT);
     const COLORREF old_text = GetTextColor(dc);
+    const MatchColors match_colors = MatchHighlightColors(selected);
     int x = rect.left;
     for (const auto& [start, end] : segments) {
         if (end <= start) {
@@ -522,9 +560,9 @@ void HistoryRenderer::DrawTextWithHighlights(HDC dc, RECT rect, sqlite3_int64 it
             font != nullptr ? font : GetStockObject(DEFAULT_GUI_FONT)
         );
         if (highlighted && m_settings.highlight_match == HighlightMatch::Color) {
-            SetTextColor(dc, RGB(0, 70, 160));
+            SetTextColor(dc, match_colors.text);
             SetBkMode(dc, OPAQUE);
-            SetBkColor(dc, RGB(255, 239, 160));
+            SetBkColor(dc, match_colors.background);
         } else {
             SetTextColor(dc, selected ? GetSysColor(COLOR_HIGHLIGHTTEXT) : old_text);
             SetBkMode(dc, TRANSPARENT);
@@ -734,9 +772,11 @@ void HistoryRenderer::DrawHistoryItem(DRAWITEMSTRUCT* draw,
                 }
             }
         } else {
-            const COLORREF marker = item.has_image ? RGB(90, 105, 120) : RGB(170, 125, 35);
+            // Placeholder frame until the image thumbnail arrives; only image
+            // rows reach this branch. System colours keep it visible in any theme.
             CPen marker_pen;
-            if (marker_pen.CreatePen(PS_SOLID, 1, marker)) {
+            if (marker_pen.CreatePen(PS_SOLID, 1,
+                    GetSysColor(selected ? COLOR_HIGHLIGHTTEXT : COLOR_GRAYTEXT))) {
                 ScopedGdiObjectSelection pen_selection(dc, marker_pen);
                 ScopedGdiObjectSelection brush_selection(dc, GetStockObject(NULL_BRUSH));
                 Rectangle(dc, layout.attachment.left + 1, layout.attachment.top + 2,

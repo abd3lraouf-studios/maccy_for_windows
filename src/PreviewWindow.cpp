@@ -321,6 +321,10 @@ LRESULT PreviewWindow::OnDrawItem(UINT, WPARAM, LPARAM lParam, BOOL &handled) {
     ScopedDcState dc_state(draw->hDC);
     ::FillRect(draw->hDC, &draw->rcItem, ::GetSysColorBrush(COLOR_WINDOW));
     if (m_bitmap.IsNull()) {
+        // The owner-draw DC starts with the system font and black text, which
+        // vanishes on a dark high contrast background.
+        ScopedGdiObjectSelection font(draw->hDC, static_cast<HFONT>(m_font));
+        ::SetTextColor(draw->hDC, ::GetSysColor(COLOR_GRAYTEXT));
         ::SetBkMode(draw->hDC, TRANSPARENT);
         ::DrawTextW(
             draw->hDC,
