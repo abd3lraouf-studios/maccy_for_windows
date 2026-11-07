@@ -1302,8 +1302,23 @@ void Database::UpdatePinnedItem(
 
     auto transaction = BeginTransaction();
     // Fingerprints are unique, so another row already holding the edited
-    // content would reject the update. It is a duplicate of the edited item;
-    // fold it in, removing its contentless FTS entry by hand as DeleteItem does.
+    // content would reject the update. Another pin is the user's own data and
+    // must not vanish: refuse. An unpinned row is a duplicate of the edited
+    // item; fold it in, removing its contentless FTS entry by hand as
+    // DeleteItem does.
+    Statement pinned_duplicate(
+        m_db,
+        "SELECT 1 FROM history_items WHERE fingerprint = ?1 AND id <> ?2 AND pinned = 1 LIMIT 1;"
+    );
+    BindText16(m_db, pinned_duplicate.get(), 1, fingerprint);
+    CheckSqliteResult(m_db, sqlite3_bind_int64(pinned_duplicate.get(), 2, id), "Unable to bind item id");
+    const int pinned_step = sqlite3_step(pinned_duplicate.get());
+    if (pinned_step == SQLITE_ROW) {
+        throw std::runtime_error("Another pin already has this text.");
+    }
+    if (pinned_step != SQLITE_DONE) {
+        throw MakeSqliteError(m_db, "Unable to check for a duplicate pin");
+    }
     Statement remove_duplicate_index(
         m_db,
         "DELETE FROM history_fts WHERE rowid IN ("
