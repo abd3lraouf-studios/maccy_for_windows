@@ -58,7 +58,6 @@ private:
     static std::wstring ExtractClipboardText();
     static std::wstring ExtractClipboardAnsiText();
     static std::wstring FilesPreview(HGLOBAL data);
-    static std::wstring HashCapture(const std::vector<ClipboardFormatData>& data);
 
     // Application identification
     static std::wstring GetSourceApplication();

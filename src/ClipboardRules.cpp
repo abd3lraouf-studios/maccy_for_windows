@@ -3,8 +3,10 @@
 #include <algorithm>
 #include <array>
 #include <cstdlib>
+#include <cwchar>
 #include <cwctype>
 #include <cstring>
+#include <iterator>
 #include <limits>
 #include <regex>
 #include <string>
@@ -33,7 +35,14 @@ std::wstring_view BoundedRegexHaystack(std::wstring_view text) {
 
 bool RegexSearchBounded(const std::wregex &expression, std::wstring_view text) {
     const std::wstring_view haystack = BoundedRegexHaystack(text);
-    return std::regex_search(haystack.begin(), haystack.end(), expression);
+    try {
+        return std::regex_search(haystack.begin(), haystack.end(), expression);
+    } catch (const std::regex_error &) {
+        // MSVC throws error_complexity / error_stack at match time for
+        // backtracking-heavy patterns. Treat that as "no match": an ignore rule
+        // must not abort capture (with the clipboard held open) or break search.
+        return false;
+    }
 }
 
 const std::vector<std::wstring> &DefaultIgnoredFormats() {
@@ -219,6 +228,11 @@ bool IsTextFormat(UINT format, std::wstring_view name) {
         EqualInsensitive(name, L"HTML Format") || EqualInsensitive(name, L"Rich Text Format");
 }
 
+bool IsPlainTextFormat(const ClipboardFormatData &data) {
+    return IsUnicodeTextFormat(data) || IsAnsiTextFormat(data) ||
+        data.format == CF_OEMTEXT || data.format == CF_LOCALE;
+}
+
 bool IsImageFormat(UINT format, std::wstring_view name) {
     return format == CF_DIB || format == CF_DIBV5 || format == CF_BITMAP ||
         EqualInsensitive(name, L"PNG") || EqualInsensitive(name, L"image/png") ||
@@ -372,11 +386,6 @@ std::wstring DecodeByteText(
 }
 
 std::wstring StripHtml(std::wstring value) {
-    const size_t header_end = value.find(L"\r\n\r\n");
-    if (header_end != std::wstring::npos) {
-        value.erase(0, header_end + 4);
-    }
-
     // Drop script/style blocks before tag stripping (L-17).
     {
         std::wstring lower = Lower(value);
@@ -461,6 +470,50 @@ std::wstring StripHtml(std::wstring value) {
         result.push_back(character);
     }
     return TrimWhitespace(std::move(result));
+}
+
+std::wstring HtmlFormatText(const std::vector<unsigned char> &bytes) {
+    const size_t nul = std::find(bytes.begin(), bytes.end(), 0) - bytes.begin();
+    const std::string_view payload(reinterpret_cast<const char *>(bytes.data()), nul);
+    // The description header is "Key:value" lines ending at the first tag.
+    const size_t first_tag = payload.find('<');
+    const std::string_view header = payload.substr(0, first_tag);
+
+    // Header values are byte offsets into this UTF-8 payload. Missing, -1 or
+    // out-of-range values (seen in the wild) leave the range unusable.
+    const auto header_offset = [header](std::string_view key) -> std::optional<size_t> {
+        const size_t at = header.find(key);
+        if (at == std::string_view::npos) {
+            return std::nullopt;
+        }
+        size_t value = 0;
+        size_t digits = 0;
+        for (size_t index = at + key.size(); index < header.size() &&
+             header[index] >= '0' && header[index] <= '9'; ++index) {
+            if (++digits > 18) {
+                return std::nullopt;
+            }
+            value = value * 10 + static_cast<size_t>(header[index] - '0');
+        }
+        return digits > 0 ? std::optional<size_t>(value) : std::nullopt;
+    };
+    const auto range = [&](std::string_view start_key, std::string_view end_key)
+        -> std::optional<std::string_view> {
+        const auto start = header_offset(start_key);
+        const auto end = header_offset(end_key);
+        if (!start || !end || *start >= *end || *end > payload.size()) {
+            return std::nullopt;
+        }
+        return payload.substr(*start, *end - *start);
+    };
+
+    std::string_view html = first_tag == std::string_view::npos ? payload : payload.substr(first_tag);
+    if (const auto fragment = range("StartFragment:", "EndFragment:")) {
+        html = *fragment;
+    } else if (const auto document = range("StartHTML:", "EndHTML:")) {
+        html = *document;
+    }
+    return StripHtml(DecodeByteText(std::vector<unsigned char>(html.begin(), html.end())));
 }
 
 std::wstring StripRtf(std::wstring_view value) {
@@ -624,10 +677,9 @@ SearchParts SearchPartsFromFormats(const std::vector<ClipboardFormatData> &data)
         } else if (IsAnsiTextFormat(format) && accumulator.ansi_text.empty()) {
             accumulator.ansi_text = DecodeAnsiText(format.bytes);
         } else if (IsRichTextFormat(format) && accumulator.rich_text.empty()) {
-            const std::wstring decoded = DecodeByteText(format.bytes);
             accumulator.rich_text = EqualInsensitive(format.name, L"HTML Format")
-                ? StripHtml(decoded)
-                : StripRtf(decoded);
+                ? HtmlFormatText(format.bytes)
+                : StripRtf(DecodeByteText(format.bytes));
         } else if (IsFilesFormat(format) && accumulator.paths.empty()) {
             accumulator.paths = ExtractDropPaths(format.bytes);
         }
@@ -640,6 +692,85 @@ SearchParts SearchPartsFromFormats(const std::vector<ClipboardFormatData> &data)
             ? std::move(accumulator.ansi_text)
             : std::move(accumulator.rich_text));
     result.paths = std::move(accumulator.paths);
+    return result;
+}
+
+std::wstring Fingerprint(const std::vector<ClipboardFormatData> &data) {
+    std::vector<const ClipboardFormatData *> ordered;
+    ordered.reserve(data.size());
+    for (const ClipboardFormatData &item : data) {
+        ordered.push_back(&item);
+    }
+    std::sort(ordered.begin(), ordered.end(), [](const ClipboardFormatData *lhs, const ClipboardFormatData *rhs) {
+        if (lhs->format != rhs->format) {
+            return lhs->format < rhs->format;
+        }
+        return lhs->name < rhs->name;
+    });
+
+    // Dual independent FNV-1a streams -> 128-bit hex fingerprint (L-08). The
+    // byte sequence must stay stable: stored rows are matched against it.
+    std::uint64_t hash_a = 1469598103934665603ULL;
+    std::uint64_t hash_b = 0xcbf29ce484222325ULL;
+    const auto add_bytes = [&hash_a, &hash_b](const void *source, size_t count) {
+        const auto *bytes = static_cast<const unsigned char *>(source);
+        for (size_t index = 0; index < count; ++index) {
+            hash_a ^= bytes[index];
+            hash_a *= 1099511628211ULL;
+            hash_b ^= static_cast<std::uint64_t>(bytes[index]) + 0x9e3779b97f4a7c15ULL;
+            hash_b *= 1099511628211ULL;
+        }
+    };
+
+    const std::uint64_t format_count = ordered.size();
+    std::uint64_t total_bytes = 0;
+    for (const ClipboardFormatData *item : ordered) {
+        total_bytes += item->bytes.size();
+    }
+    add_bytes(&format_count, sizeof(format_count));
+    add_bytes(&total_bytes, sizeof(total_bytes));
+    for (const ClipboardFormatData *item : ordered) {
+        add_bytes(item->name.data(), item->name.size() * sizeof(wchar_t));
+        add_bytes(&item->format, sizeof(item->format));
+        const std::uint64_t size = item->bytes.size();
+        add_bytes(&size, sizeof(size));
+        add_bytes(item->bytes.data(), item->bytes.size());
+    }
+
+    wchar_t text[33]{};
+    std::swprintf(text, std::size(text), L"%016llx%016llx", hash_a, hash_b);
+    return text;
+}
+
+ClipboardFormatData UnicodeTextFormat(std::wstring_view text) {
+    ClipboardFormatData data{L"CF_UNICODETEXT", CF_UNICODETEXT};
+    data.bytes.resize((text.size() + 1) * sizeof(wchar_t));
+    std::memcpy(data.bytes.data(), text.data(), text.size() * sizeof(wchar_t));
+    std::memset(data.bytes.data() + text.size() * sizeof(wchar_t), 0, sizeof(wchar_t));
+    return data;
+}
+
+std::optional<std::vector<ClipboardFormatData>> PlainPasteFormats(
+    const std::vector<ClipboardFormatData> &data
+) {
+    std::vector<ClipboardFormatData> result;
+    bool has_plain_text = false;
+    for (const ClipboardFormatData &format : data) {
+        if (IsPlainTextFormat(format)) {
+            has_plain_text = true;
+            result.push_back(format);
+        } else if (IsFilesFormat(format)) {
+            result.push_back(format);
+        }
+    }
+    if (!has_plain_text) {
+        // Plain text is absent, so the body can only come from HTML or RTF.
+        const std::wstring text = SearchPartsFromFormats(data).body;
+        if (text.empty()) {
+            return std::nullopt;
+        }
+        result.insert(result.begin(), UnicodeTextFormat(text));
+    }
     return result;
 }
 

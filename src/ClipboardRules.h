@@ -4,6 +4,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <optional>
 #include <regex>
 #include <string>
 #include <string_view>
@@ -47,6 +48,8 @@ bool IsAnsiTextFormat(const ClipboardFormatData &data);
 bool IsRichTextFormat(const ClipboardFormatData &data);
 bool IsFilesFormat(const ClipboardFormatData &data);
 bool IsTextFormat(UINT format, std::wstring_view name);
+// Unformatted text only: unlike IsTextFormat, HTML and RTF do not count.
+bool IsPlainTextFormat(const ClipboardFormatData &data);
 bool IsImageFormat(UINT format, std::wstring_view name);
 bool IsEncodedImageName(std::wstring_view name);
 bool IsDib(const ClipboardFormatData &data);
@@ -63,7 +66,11 @@ std::wstring DecodeByteText(
     const std::vector<unsigned char> &bytes,
     size_t maximum_characters = std::wstring::npos
 );
+// Markup to text; `value` is HTML only, without a CF_HTML header.
 std::wstring StripHtml(std::wstring value);
+// Text of a raw "HTML Format" (CF_HTML) payload: its fragment, else its
+// document, located by the header's byte offsets.
+std::wstring HtmlFormatText(const std::vector<unsigned char> &bytes);
 std::wstring StripRtf(std::wstring_view value);
 std::wstring ExtractDropPaths(const std::vector<unsigned char> &bytes);
 std::vector<std::wstring> DecodeDropPaths(const std::vector<unsigned char> &bytes);
@@ -74,5 +81,20 @@ struct SearchParts {
 };
 
 SearchParts SearchPartsFromFormats(const std::vector<ClipboardFormatData> &data);
+
+// Content identity of a set of formats, independent of their order. History
+// rows are deduplicated by it, so every writer of history_items.fingerprint
+// must use this one hash.
+std::wstring Fingerprint(const std::vector<ClipboardFormatData> &data);
+
+// A NUL-terminated CF_UNICODETEXT payload holding `text`.
+ClipboardFormatData UnicodeTextFormat(std::wstring_view text);
+
+// The formats "paste without formatting" writes: plain text and file lists.
+// An item with only rich text falls back to its stripped text. nullopt when
+// the item has no text at all, so it is pasted unchanged.
+std::optional<std::vector<ClipboardFormatData>> PlainPasteFormats(
+    const std::vector<ClipboardFormatData> &data
+);
 
 } // namespace ClipboardRules
