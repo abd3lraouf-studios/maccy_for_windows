@@ -4,6 +4,7 @@
 #include "ClipboardRules.h"
 #include "KeyboardHandler.h"
 #include "Localization.h"
+#include "Theme.h"
 
 #include <windows.h>
 #include <atltypes.h>
@@ -325,6 +326,8 @@ enum SettingsControlId : int {
     kAPopupScreen = IDC_A_POPUP_SCREEN,
     kAResetPosition = IDC_A_RESET_POSITION,
     kAPinTo = IDC_A_PIN_TO,
+    kATheme = IDC_A_THEME,
+    kAThemeMode = IDC_A_THEME_MODE,
     kAImageHeight = IDC_A_IMAGE_HEIGHT,
     kAOpenPreview = IDC_A_OPEN_PREVIEW,
     kAPreviewDelay = IDC_A_PREVIEW_DELAY,
@@ -703,7 +706,9 @@ void SettingsWindow::LocalizeControls() {
     SetLocalizedText(appearance, IDC_A_SCREEN_LABEL, IDS_A_SCREEN);
     SetLocalizedText(appearance, IDC_A_RESET_POSITION, IDS_A_RESET_POSITION);
     SetLocalizedText(appearance, IDC_A_PIN_TO_LABEL, IDS_A_PIN_TO);
+    SetLocalizedText(appearance, IDC_A_THEME_LABEL, IDS_A_THEME);
     SetLocalizedText(appearance, IDC_A_IMAGE_HEIGHT_LABEL, IDS_A_IMAGE_HEIGHT);
+    SetLocalizedText(appearance, IDC_A_THEME_MODE_LABEL, IDS_A_THEME_MODE);
     SetLocalizedText(appearance, IDC_A_OPEN_PREVIEW, IDS_A_AUTO_PREVIEW);
     SetLocalizedText(appearance, IDC_A_PREVIEW_DELAY_LABEL, IDS_A_PREVIEW_DELAY);
     SetLocalizedText(appearance, IDC_A_HIGHLIGHT_LABEL, IDS_A_HIGHLIGHT);
@@ -922,6 +927,19 @@ void SettingsWindow::BindControls() {
     CComboBox pinTo(get(kPageAppearance, kAPinTo).m_hWnd);
     AddComboItem(pinTo, Localization::Text(IDS_PIN_TOP).c_str());
     AddComboItem(pinTo, Localization::Text(IDS_PIN_BOTTOM).c_str());
+
+    // Indexed by ThemeFamily; the names are proper names, not translated.
+    CComboBox theme(get(kPageAppearance, kATheme).m_hWnd);
+    for (int family = 0; family < kThemeFamilyCount; ++family) {
+        const std::wstring name(Theme::FamilyName(static_cast<ThemeFamily>(family)));
+        AddComboItem(theme, name.c_str());
+    }
+
+    // Indexed by ThemeMode.
+    CComboBox themeMode(get(kPageAppearance, kAThemeMode).m_hWnd);
+    AddComboItem(themeMode, Localization::Text(IDS_THEME_MODE_SYSTEM).c_str());
+    AddComboItem(themeMode, Localization::Text(IDS_THEME_MODE_LIGHT).c_str());
+    AddComboItem(themeMode, Localization::Text(IDS_THEME_MODE_DARK).c_str());
 
     CComboBox highlight(get(kPageAppearance, kAHighlight).m_hWnd);
     AddComboItem(highlight, Localization::Text(IDS_HIGHLIGHT_COLOR).c_str());

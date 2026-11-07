@@ -182,6 +182,8 @@ protected:
     int m_menuIconIndex = 0;
     int m_searchVisibilityIndex = 0;
     int m_sortByIndex = 0;
+    int m_themeIndex = 0;
+    int m_themeModeIndex = 0;
 };
 
 template <UINT ResourceId>
@@ -227,6 +229,9 @@ public:
                 : settings.menu_icon == L"scissors" ? 2
                 : settings.menu_icon == L"paperclip" ? 3 : 0;
             this->m_searchVisibilityIndex = static_cast<int>(settings.search_visibility);
+            this->m_themeIndex = std::clamp(static_cast<int>(settings.theme), 0, kThemeFamilyCount - 1);
+            this->m_themeModeIndex = std::clamp(
+                static_cast<int>(settings.theme_mode), 0, static_cast<int>(ThemeMode::Dark));
         } else if constexpr (ResourceId == IDD_PAGE_STORAGE) {
             this->m_sortByIndex = settings.sort_by;
         }
@@ -251,6 +256,12 @@ public:
             if ((nCtlID == (UINT)-1) || (nCtlID == IDC_A_PIN_TO))
                 this->template DDX_Index<WTL::CComboBox>(
                     IDC_A_PIN_TO, this->m_pinPositionIndex, bSaveAndValidate);
+            if ((nCtlID == (UINT)-1) || (nCtlID == IDC_A_THEME))
+                this->template DDX_Index<WTL::CComboBox>(
+                    IDC_A_THEME, this->m_themeIndex, bSaveAndValidate);
+            if ((nCtlID == (UINT)-1) || (nCtlID == IDC_A_THEME_MODE))
+                this->template DDX_Index<WTL::CComboBox>(
+                    IDC_A_THEME_MODE, this->m_themeModeIndex, bSaveAndValidate);
             DDX_CHECK(IDC_A_OPEN_PREVIEW, this->m_settings->open_preview_automatically)
             if ((nCtlID == (UINT)-1) || (nCtlID == IDC_A_HIGHLIGHT))
                 this->template DDX_Index<WTL::CComboBox>(
@@ -312,6 +323,10 @@ public:
                 std::clamp(this->m_menuIconIndex, 0, 3))];
             this->m_settings->search_visibility = static_cast<SearchVisibility>(
                 std::max(0, this->m_searchVisibilityIndex));
+            this->m_settings->theme = static_cast<ThemeFamily>(
+                std::clamp(this->m_themeIndex, 0, kThemeFamilyCount - 1));
+            this->m_settings->theme_mode = static_cast<ThemeMode>(
+                std::clamp(this->m_themeModeIndex, 0, static_cast<int>(ThemeMode::Dark)));
         } else if constexpr (ResourceId == IDD_PAGE_STORAGE) {
             this->m_settings->sort_by = std::clamp(this->m_sortByIndex, 0, 2);
         }
@@ -431,6 +446,8 @@ public:
         COMMAND_HANDLER(IDC_A_POPUP_POSITION, CBN_SELCHANGE, OnSettingChanged)
         COMMAND_HANDLER(IDC_A_POPUP_SCREEN, CBN_SELCHANGE, OnSettingChanged)
         COMMAND_HANDLER(IDC_A_PIN_TO, CBN_SELCHANGE, OnSettingChanged)
+        COMMAND_HANDLER(IDC_A_THEME, CBN_SELCHANGE, OnSettingChanged)
+        COMMAND_HANDLER(IDC_A_THEME_MODE, CBN_SELCHANGE, OnSettingChanged)
         COMMAND_HANDLER(IDC_A_IMAGE_HEIGHT, EN_KILLFOCUS, OnSettingChanged)
         COMMAND_HANDLER(IDC_A_OPEN_PREVIEW, BN_CLICKED, OnSettingChanged)
         COMMAND_HANDLER(IDC_A_PREVIEW_DELAY, EN_KILLFOCUS, OnSettingChanged)
