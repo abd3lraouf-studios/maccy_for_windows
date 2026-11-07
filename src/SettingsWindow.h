@@ -18,6 +18,7 @@
 #include <atlddx.h>
 #include <atlgdi.h>
 #include <atlwin.h>
+#include <uxtheme.h>
 
 #include "Settings.h"
 #include "ClipboardData.h"
@@ -330,17 +331,23 @@ private:
         const int controlId = edit != nullptr ? GetDlgCtrlID(edit) : 0;
         if (controlId == IDC_G_OPEN_HOTKEY || controlId == IDC_G_PIN_HOTKEY ||
             controlId == IDC_G_DELETE_HOTKEY || controlId == IDC_G_PREVIEW_HOTKEY) {
+            // The hotkey boxes are read-only edits, which Windows paints like
+            // static text on the page background. Paint them as input fields,
+            // with the system colours so high-contrast themes still apply.
             const HDC dc = reinterpret_cast<HDC>(wParam);
-            SetBkColor(dc, RGB(255, 255, 255));
-            SetTextColor(dc, RGB(0, 0, 0));
+            SetBkColor(dc, GetSysColor(COLOR_WINDOW));
+            SetTextColor(dc, GetSysColor(COLOR_WINDOWTEXT));
             handled = TRUE;
-            return reinterpret_cast<LRESULT>(GetStockObject(WHITE_BRUSH));
+            return reinterpret_cast<LRESULT>(GetSysColorBrush(COLOR_WINDOW));
         }
         handled = FALSE;
         return 0;
     }
 
     LRESULT OnInitDialog(UINT, WPARAM, LPARAM, BOOL &handled) {
+        // Pages sit on a tab control; let them draw the tab body instead of
+        // the plain dialog colour.
+        EnableThemeDialogTexture(this->m_hWnd, ETDT_ENABLETAB);
         handled = TRUE;
         return TRUE;
     }
