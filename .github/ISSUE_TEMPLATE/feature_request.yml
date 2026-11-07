@@ -1,45 +1,45 @@
 name: Feature request
-description: 提议一个新功能或行为改进
+description: Suggest a new feature or a change in behavior
 title: "[Feature]: "
 body:
   - type: checkboxes
     id: preflight
     attributes:
-      label: 提交前检查
+      label: Before you submit
       options:
-        - label: 我已经搜索过已有 Issue 和功能请求。
+        - label: I searched existing issues and feature requests.
           required: true
-        - label: 我描述的是实际问题，而不是只描述一个实现想法。
+        - label: I am describing a real problem, not only an implementation idea.
           required: true
 
   - type: textarea
     id: problem
     attributes:
-      label: 要解决的问题
-      description: 谁遇到了什么问题？当前有什么限制？
+      label: Problem
+      description: Who runs into what problem? What is limiting today?
     validations:
       required: true
 
   - type: textarea
     id: proposal
     attributes:
-      label: 建议的解决方案
-      description: 请描述期望的用户行为和结果。
+      label: Proposed solution
+      description: Describe the behavior and result you expect as a user.
     validations:
       required: true
 
   - type: textarea
     id: alternatives
     attributes:
-      label: 其他方案
-      description: 请说明已经考虑过的替代方案或临时做法。
+      label: Alternatives
+      description: Describe any alternatives or workarounds you have considered.
     validations:
       required: false
 
   - type: textarea
     id: impact
     attributes:
-      label: 影响范围
-      description: 请说明对性能、存储、隐私、兼容性和界面的影响。
+      label: Impact
+      description: Describe the effect on performance, storage, privacy, compatibility, and the UI.
     validations:
       required: false

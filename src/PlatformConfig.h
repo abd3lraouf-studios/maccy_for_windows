@@ -1,32 +1,32 @@
 #pragma once
 
 // ============================================================================
-// Windows 平台配置
-// 这个文件应该被所有需要 Windows API 的头文件包含
-// 确保平台配置的一致性
+// Windows platform configuration
+// Every header that needs the Windows API includes this file first, so
+// windows.h is always configured the same way.
 // ============================================================================
 
-// 禁用 Windows.h 中的 min/max 宏，避免与 std::min/max 冲突
+// Disable the min/max macros from windows.h; they collide with std::min/max.
 #ifndef NOMINMAX
 #define NOMINMAX
 #endif
 
-// 减少 Windows.h 包含的内容，加快编译速度
+// Trim what windows.h pulls in to speed up compilation.
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
 #endif
 
-// Windows 头文件
+// Windows headers
 #include <windows.h>
 
-// 编译器特定配置
+// Compiler-specific settings
 #ifdef _MSC_VER
-    // 禁用特定警告（根据项目需要调整）
+    // Silence specific warnings (adjust as the project needs).
     #pragma warning(push)
-    #pragma warning(disable: 4505)  // 未引用的局部函数已移除
+    #pragma warning(disable: 4505)  // unreferenced local function has been removed
 #endif
 
-// 调试宏
+// Debug logging macros
 #ifdef _DEBUG
     #define DEBUG_LOG(msg) OutputDebugStringW(msg)
     #define DEBUG_LOGF(fmt, ...) { \
