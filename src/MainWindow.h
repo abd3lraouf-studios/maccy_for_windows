@@ -208,6 +208,7 @@ private:
     int SelectedHistoryIndex() const;
     bool IsOurWindow(HWND window) const;
     bool GetTrayIconRect(RECT &rect) const;
+    void RememberTrayIconLocation(WPARAM event_anchor);
     bool IsTrayPoint(POINT screen_point, int dip_pad) const;
     bool IsPointInPopupUi(POINT screen_point) const;
     bool ConsumeDuplicateTrayOpen(WPARAM click_anchor);
@@ -333,6 +334,9 @@ private:
     POINT m_outsideDismissPoint{};
     mutable RECT m_cachedTrayRect{};
     mutable bool m_hasCachedTrayRect = false;
+    // Where the icon was last clicked when that was away from the shell's
+    // rect: a shell replacement (Seelen UI, ...) shows it in its own bar.
+    std::optional<RECT> m_hostedTrayRect;
     // Click-outside hook runs on its own thread so a slow paint cannot stall the cursor.
     HANDLE m_dismissHookThread = nullptr;
     DWORD m_dismissHookThreadId = 0;

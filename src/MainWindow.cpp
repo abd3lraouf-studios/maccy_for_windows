@@ -694,6 +694,10 @@ MainWindow* MainWindow::s_dismissHookOwner = nullptr;
 HHOOK MainWindow::s_popupMouseHook = nullptr;
 
 bool MainWindow::GetTrayIconRect(RECT &rect) const {
+    if (m_hostedTrayRect) {
+        rect = *m_hostedTrayRect;
+        return true;
+    }
     RECT current{};
     if (m_trayIcon.IsAdded() && m_trayIcon.GetRect(current) &&
         current.right > current.left && current.bottom > current.top) {
@@ -705,6 +709,42 @@ bool MainWindow::GetTrayIconRect(RECT &rect) const {
     }
     rect = m_cachedTrayRect;
     return true;
+}
+
+// Shell replacements draw the icon in their own bar and forward its clicks,
+// while Shell_NotifyIconGetRect keeps reporting the hidden taskbar. A click
+// that hits neither the shell's rect nor its anchor, on such a bar, marks
+// where the icon is.
+void MainWindow::RememberTrayIconLocation(WPARAM event_anchor) {
+    POINT cursor{};
+    ::GetCursorPos(&cursor);
+    const POINT anchor{GET_X_LPARAM(event_anchor), GET_Y_LPARAM(event_anchor)};
+    RECT shell_rect{};
+    if (m_trayIcon.GetRect(shell_rect) && !::IsRectEmpty(&shell_rect)) {
+        const int pad = ScaleDip(m_hWnd, kTrayHitPadDip);
+        if (PointInInflatedRect(shell_rect, cursor, pad) ||
+            PointInInflatedRect(shell_rect, anchor, pad)) {
+            m_hostedTrayRect.reset();
+            return;
+        }
+    }
+    // Only another program's always-on-top bar can host the icon. The shell's
+    // overflow flyout may already have closed, leaving a desktop or app window
+    // under the cursor; learning that spot would turn it into a dead zone.
+    const HWND host = ::GetAncestor(::WindowFromPhysicalPoint(cursor), GA_ROOT);
+    wchar_t host_class[32]{};
+    if (host != nullptr) {
+        ::GetClassNameW(host, host_class, 32);
+    }
+    if (host == nullptr || IsOurWindow(host) || IsOverflowTrayWindow(host) ||
+        ::lstrcmpW(host_class, L"Shell_TrayWnd") == 0 ||
+        ::lstrcmpW(host_class, L"Shell_SecondaryTrayWnd") == 0 ||
+        (::GetWindowLongPtrW(host, GWL_EXSTYLE) & WS_EX_TOPMOST) == 0) {
+        return;
+    }
+    const UINT dpi = DpiForMonitor(::MonitorFromPoint(cursor, MONITOR_DEFAULTTONEAREST));
+    const int half = ::GetSystemMetricsForDpi(SM_CXSMICON, dpi) / 2;
+    m_hostedTrayRect = RECT{cursor.x - half, cursor.y - half, cursor.x + half, cursor.y + half};
 }
 
 bool MainWindow::IsTrayPoint(POINT screen_point, int dip_pad) const {
@@ -934,7 +974,7 @@ void MainWindow::PositionPopup(PopupPosition popup_position) {
         }
         break;
     case PopupPosition::StatusItem:
-        if (m_trayIcon.GetRect(tray_rect)) {
+        if (GetTrayIconRect(tray_rect)) {
             const POINT tray_point{
                 (tray_rect.left + tray_rect.right) / 2,
                 (tray_rect.top + tray_rect.bottom) / 2
@@ -984,7 +1024,12 @@ void MainWindow::PositionPopup(PopupPosition popup_position) {
     case PopupPosition::StatusItem: {
         if (tray_rect.left != tray_rect.right || tray_rect.top != tray_rect.bottom) {
             x = tray_rect.left + ((tray_rect.right - tray_rect.left) - width) / 2;
-            y = tray_rect.top - height - 6;
+            // Open away from the screen edge holding the icon: down from a
+            // top bar, up from a bottom taskbar.
+            const RECT &screen = monitor_info.rcMonitor;
+            const bool icon_in_top_half =
+                tray_rect.top + tray_rect.bottom < screen.top + screen.bottom;
+            y = icon_in_top_half ? tray_rect.bottom + 6 : tray_rect.top - height - 6;
         }
         break;
     }
@@ -2610,6 +2655,7 @@ LRESULT MainWindow::OnTrayIcon(UINT, WPARAM wParam, LPARAM lParam, BOOL&) {
     switch (event) {
     case NIN_SELECT:
     case NIN_KEYSELECT:
+        RememberTrayIconLocation(wParam);
         // VERSION_4 also posts WM_LBUTTONUP / WM_LBUTTONDBLCLK for the same
         // click. Handling those as well toggles twice (show then hide).
         if ((::GetKeyState(VK_MENU) & 0x8000) != 0) {
@@ -2621,6 +2667,7 @@ LRESULT MainWindow::OnTrayIcon(UINT, WPARAM wParam, LPARAM lParam, BOOL&) {
         }
         break;
     case WM_CONTEXTMENU:
+        RememberTrayIconLocation(wParam);
         m_pasteController.CaptureTargetWindow();
         ShowTrayMenu();
         break;
