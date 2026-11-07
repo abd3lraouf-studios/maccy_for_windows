@@ -3,6 +3,7 @@
 #include "PlatformConfig.h"
 
 #include <mutex>
+#include <stop_token>
 #include <string>
 #include <string_view>
 #include <thread>
@@ -24,6 +25,8 @@ struct UpdateCheckResult {
 };
 
 bool IsNewerSemanticVersion(std::wstring_view current, std::wstring_view candidate);
+// True only for this repository's https://github.com/<owner>/<repo>/releases/tag/<tag> page.
+bool IsExpectedReleaseUrl(std::string_view url);
 
 class UpdateChecker {
 public:
@@ -40,13 +43,13 @@ public:
     void Stop() noexcept;
 
 private:
-    void Run(UpdateCheckMode mode);
-    static UpdateCheckResult Check(UpdateCheckMode mode);
+    void Run(const std::stop_token &stop, UpdateCheckMode mode);
+    static UpdateCheckResult Check(const std::stop_token &stop, UpdateCheckMode mode);
 
     mutable std::mutex m_mutex;
     HWND m_window = nullptr;
     bool m_stopping = false;
     bool m_checking = false;
-    std::thread m_worker;
+    std::jthread m_worker;
     std::vector<UpdateCheckResult> m_results;
 };
