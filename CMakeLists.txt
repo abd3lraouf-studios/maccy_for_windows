@@ -83,6 +83,7 @@ set(MACCY_SOURCES
         "${MACCY_SOURCE_DIR}/HistoryListControls.cpp"
         "${MACCY_SOURCE_DIR}/ClipboardMonitor.cpp"
         "${MACCY_SOURCE_DIR}/ClipboardRules.cpp"
+        "${MACCY_SOURCE_DIR}/CopyNotification.cpp"
         "${MACCY_SOURCE_DIR}/PasteController.cpp"
         "${MACCY_SOURCE_DIR}/PreviewDecoder.cpp"
         "${MACCY_SOURCE_DIR}/PreviewWorker.cpp"
@@ -164,6 +165,8 @@ target_link_libraries(maccy PRIVATE
         ws2_32
         windowscodecs
         ole32
+        windowsapp
+        version
 )
 
 target_compile_definitions(maccy PRIVATE UNICODE _UNICODE)
@@ -367,10 +370,11 @@ set(CPACK_NSIS_INSTALL_ROOT "$LOCALAPPDATA\\\\Programs")
 set(CPACK_NSIS_EXTRA_PREINSTALL_COMMANDS
     "Call MaccyStopRunningApp\nStrCmp \\\"$MACCY_UPGRADE_FOUND\\\" \\\"1\\\" 0 maccy_preinstall_done\nClearErrors\nRMDir /r \\\"$INSTDIR\\\\bin\\\"\nmaccy_preinstall_done:")
 
-# Full uninstall always removes this user's logon entry. User data is deleted only
+# Full uninstall always removes this user's logon entry and the notification
+# AppUserModelID that CopyNotification.cpp registers. User data is deleted only
 # when the uninstaller page's checkbox is selected.
 set(CPACK_NSIS_EXTRA_UNINSTALL_COMMANDS
-    "Call un.MaccyStopRunningApp\nDeleteRegValue HKCU \\\"Software\\\\Microsoft\\\\Windows\\\\CurrentVersion\\\\Run\\\" \\\"maccy\\\"\nStrCmp \\\"$MACCY_DELETE_USER_DATA\\\" \\\"1\\\" 0 maccy_uninstall_done\nClearErrors\nRMDir /r \\\"$LOCALAPPDATA\\\\maccy\\\"\nIfFileExists \\\"$LOCALAPPDATA\\\\maccy\\\\*.*\\\" 0 maccy_uninstall_done\nmaccy_data_delete_failed:\nMessageBox MB_OK|MB_ICONEXCLAMATION \\\"$(MACCY_UNINSTALL_DATA_DELETE_FAILED)\\\"\nmaccy_uninstall_done:")
+    "Call un.MaccyStopRunningApp\nDeleteRegValue HKCU \\\"Software\\\\Microsoft\\\\Windows\\\\CurrentVersion\\\\Run\\\" \\\"maccy\\\"\nDeleteRegKey HKCU \\\"Software\\\\Classes\\\\AppUserModelId\\\\Maccy.ClipboardHistory\\\"\nStrCmp \\\"$MACCY_DELETE_USER_DATA\\\" \\\"1\\\" 0 maccy_uninstall_done\nClearErrors\nRMDir /r \\\"$LOCALAPPDATA\\\\maccy\\\"\nIfFileExists \\\"$LOCALAPPDATA\\\\maccy\\\\*.*\\\" 0 maccy_uninstall_done\nmaccy_data_delete_failed:\nMessageBox MB_OK|MB_ICONEXCLAMATION \\\"$(MACCY_UNINSTALL_DATA_DELETE_FAILED)\\\"\nmaccy_uninstall_done:")
 
 # Create Start Menu and desktop shortcuts that use the icon embedded in maccy.exe.
 set(CPACK_PACKAGE_EXECUTABLES "${PROJECT_NAME};${PROJECT_NAME}")
