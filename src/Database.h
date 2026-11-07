@@ -96,6 +96,9 @@ private:
     };
 
     void Exec(std::string_view sql) const;
+    void EnableIncrementalVacuum() const;
+    // Returns pages freed by deletes to the file system (auto_vacuum is INCREMENTAL).
+    void ReleaseFreePages() const;
     void CreateHistoryTables();
     sqlite3_int64 CountRows(const char *table) const;
     const char *ListTable(IgnoreListKind list) const;

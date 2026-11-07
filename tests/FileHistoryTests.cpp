@@ -148,6 +148,63 @@ struct TemporaryFile {
     }
 };
 
+struct RawConnection {
+    sqlite3 *db = nullptr;
+    explicit RawConnection(const std::filesystem::path &path) {
+        Check(sqlite3_open16(path.c_str(), &db) == SQLITE_OK, "Cannot open raw SQLite connection");
+    }
+    ~RawConnection() { sqlite3_close(db); }
+    void Exec(const char *sql) const {
+        Check(sqlite3_exec(db, sql, nullptr, nullptr, nullptr) == SQLITE_OK, sql);
+    }
+    sqlite3_int64 Query(const char *sql) const {
+        sqlite3_stmt *statement = nullptr;
+        Check(sqlite3_prepare_v2(db, sql, -1, &statement, nullptr) == SQLITE_OK, sql);
+        const bool has_row = sqlite3_step(statement) == SQLITE_ROW;
+        const sqlite3_int64 value = has_row ? sqlite3_column_int64(statement, 0) : -1;
+        sqlite3_finalize(statement);
+        Check(has_row, sql);
+        return value;
+    }
+};
+
+void CheckDatabaseShrinks() {
+    TemporaryFile legacy;
+    {
+        // A database created before auto_vacuum was set, as older builds left it.
+        RawConnection raw(legacy.path);
+        raw.Exec("PRAGMA journal_mode = WAL;");
+        raw.Exec("CREATE TABLE legacy(value TEXT); INSERT INTO legacy VALUES('kept');");
+        Check(raw.Query("PRAGMA auto_vacuum;") == 0, "Legacy database must start without auto_vacuum");
+    }
+    { Database database(legacy.path); }
+    {
+        RawConnection raw(legacy.path);
+        Check(raw.Query("PRAGMA auto_vacuum;") == 2, "Existing databases must switch to incremental auto_vacuum");
+        Check(raw.Query("SELECT COUNT(*) FROM legacy;") == 1, "Switching auto_vacuum lost data");
+    }
+
+    TemporaryFile fresh;
+    {
+        Database database(fresh.path);
+        for (int index = 0; index < 4; ++index) {
+            database.SaveClipboard(TextCapture(std::wstring(256 * 1024, static_cast<wchar_t>(L'a' + index))), 10);
+        }
+        RawConnection raw(fresh.path);
+        Check(raw.Query("PRAGMA auto_vacuum;") == 2, "New databases must use incremental auto_vacuum");
+        const sqlite3_int64 full_pages = raw.Query("PRAGMA page_count;");
+        database.DeleteAll();
+        Check(raw.Query("PRAGMA freelist_count;") == 0 && raw.Query("PRAGMA page_count;") < full_pages / 4,
+            "Clearing history must return its pages to the file system");
+    }
+
+    for (const TemporaryFile *file : {&legacy, &fresh}) {
+        std::error_code error;
+        std::filesystem::remove(file->path.wstring() + L"-wal", error);
+        std::filesystem::remove(file->path.wstring() + L"-shm", error);
+    }
+}
+
 void CheckImagePreview() {
     BITMAPINFOHEADER info{};
     info.biSize = sizeof(info);
@@ -208,6 +265,7 @@ int main() {
         CheckFileMetadata();
         CheckImagePreview();
         CheckPinnedEditSurvivesRecopy();
+        CheckDatabaseShrinks();
     } catch (const std::exception &error) {
         std::cerr << error.what() << '\n';
         exit_code = 1;

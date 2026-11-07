@@ -244,12 +244,17 @@ Database::Database(const std::filesystem::path &path)
     }
 
     try {
+        // First, so a concurrent open of the same file (StorageWorker and
+        // PreviewWorker both open it) waits instead of failing.
+        Exec("PRAGMA busy_timeout = 5000;");
         Exec("PRAGMA foreign_keys = ON;");
-        Exec("PRAGMA auto_vacuum = INCREMENTAL;");
+        // Truncate the WAL back to this size after checkpoints; without it the
+        // file keeps the high-water mark of the largest copy ever written.
+        Exec("PRAGMA journal_size_limit = 4194304;");
+        EnableIncrementalVacuum();
         Exec("PRAGMA journal_mode = WAL;");
         Exec("PRAGMA synchronous = NORMAL;");
         Exec("PRAGMA temp_store = MEMORY;");
-        Exec("PRAGMA busy_timeout = 5000;");
         Exec(
             "CREATE TABLE IF NOT EXISTS app_state ("
             "key TEXT PRIMARY KEY,"
@@ -286,6 +291,43 @@ Database::Database(const std::filesystem::path &path)
 Database::~Database() {
     if (m_db != nullptr) {
         sqlite3_close(m_db);
+    }
+}
+
+void Database::EnableIncrementalVacuum() const {
+    constexpr int kIncremental = 2;
+    const auto auto_vacuum_mode = [this]() {
+        Statement statement(m_db, "PRAGMA auto_vacuum;");
+        if (sqlite3_step(statement.get()) != SQLITE_ROW) {
+            throw MakeSqliteError(m_db, "Unable to read auto_vacuum mode");
+        }
+        return sqlite3_column_int(statement.get(), 0);
+    };
+    if (auto_vacuum_mode() == kIncremental) {
+        return;
+    }
+    // A new, empty file takes the mode at once. A file that already has tables
+    // only records the request: one VACUUM rebuilds it in the new mode.
+    Exec("PRAGMA auto_vacuum = INCREMENTAL;");
+    if (auto_vacuum_mode() == kIncremental) {
+        return;
+    }
+    try {
+        Exec("VACUUM;");
+        // VACUUM rewrote the whole file through the WAL; give that space back now.
+        Exec("PRAGMA wal_checkpoint(TRUNCATE);");
+    } catch (const std::exception &) {
+        // Busy (the other worker's connection) or out of disk space: the
+        // history still works, just without shrinking. The next start retries.
+    }
+}
+
+void Database::ReleaseFreePages() const {
+    try {
+        Exec("PRAGMA incremental_vacuum;");
+    } catch (const std::exception &) {
+        // Housekeeping only. The delete already committed, and the pages stay
+        // free for reuse, so a failure here must not report the delete as failed.
     }
 }
 
@@ -847,6 +889,7 @@ void Database::TrimUnpinned(int max_unpinned) const {
         throw MakeSqliteError(m_db, "Unable to trim clipboard history");
     }
     transaction.Commit();
+    ReleaseFreePages();
 }
 
 std::vector<ClipboardItem> Database::SearchHistory(
@@ -1207,6 +1250,7 @@ void Database::DeleteItem(sqlite3_int64 id) const {
         throw MakeSqliteError(m_db, "Unable to delete history item");
     }
     transaction.Commit();
+    ReleaseFreePages();
 }
 
 void Database::DeleteUnpinned() const {
@@ -1214,6 +1258,7 @@ void Database::DeleteUnpinned() const {
     Exec("DELETE FROM history_fts WHERE rowid IN (SELECT id FROM history_items WHERE pinned = 0);");
     Exec("DELETE FROM history_items WHERE pinned = 0;");
     transaction.Commit();
+    ReleaseFreePages();
 }
 
 void Database::DeleteAll() const {
@@ -1221,6 +1266,7 @@ void Database::DeleteAll() const {
     Exec("DELETE FROM history_fts;");
     Exec("DELETE FROM history_items;");
     transaction.Commit();
+    ReleaseFreePages();
 }
 
 void Database::TogglePin(sqlite3_int64 id, std::wstring_view pin_key, bool pinned) const {
