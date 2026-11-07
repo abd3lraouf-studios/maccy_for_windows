@@ -66,6 +66,15 @@ void ShowSettingsRuntimeError(
     ::MessageBoxW(owner, message.c_str(), title.c_str(), MB_OK | MB_ICONERROR);
 }
 
+// Field labels end in a colon ("Pin:"); messages and titles name the field.
+std::wstring LabelName(UINT resource_id) {
+    std::wstring text = Localization::Text(resource_id);
+    while (!text.empty() && (text.back() == L':' || text.back() == L' ')) {
+        text.pop_back();
+    }
+    return text;
+}
+
 std::wstring FindHotkeyConflict(
     const HotKeyConfig &open,
     const HotKeyConfig &pin,
@@ -92,8 +101,8 @@ std::wstring FindHotkeyConflict(
                 continue;
             }
 
-            const std::wstring first_name = Localization::Text(bindings[first].name_resource);
-            const std::wstring second_name = Localization::Text(bindings[second].name_resource);
+            const std::wstring first_name = LabelName(bindings[first].name_resource);
+            const std::wstring second_name = LabelName(bindings[second].name_resource);
             const std::wstring shortcut = HotKeyToText(*bindings[first].hotkey);
             return Localization::Format(
                 IDS_SETTINGS_SHORTCUT_CONFLICT,
@@ -204,7 +213,7 @@ LRESULT EditPinDialog::OnOK(WORD, WORD, HWND, BOOL &handled) {
     std::transform(keyLower.begin(), keyLower.end(), keyLower.begin(), std::towlower);
     if (!PinKeyPolicy::IsValid(keyLower, m_pins, m_settings, m_itemId)) {
         const std::wstring message = Localization::Text(IDS_SETTINGS_INVALID_PIN_KEY);
-        const std::wstring title = Localization::Text(IDS_G_PIN);
+        const std::wstring title = LabelName(IDS_G_PIN);
         MessageBoxW(message.c_str(), title.c_str(), MB_OK | MB_ICONWARNING);
         return 0;
     }
