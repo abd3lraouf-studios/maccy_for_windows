@@ -64,8 +64,10 @@ bool CheckPinKeys() {
     const auto available = PinKeyPolicy::Available(pins, settings);
     return !PinKeyPolicy::IsValid(L"b", pins, settings, 0) &&
         PinKeyPolicy::IsValid(L"b", pins, settings, 1) &&
-        PinKeyPolicy::Next(pins, settings) == L"0" &&
-        PinKeyPolicy::IsValid(L"9", pins, settings, 0) &&
+        PinKeyPolicy::Next(pins, settings) == L"c" &&
+        !PinKeyPolicy::IsValid(L"1", pins, settings, 0) &&
+        !PinKeyPolicy::IsValid(L"9", pins, settings, 0) &&
+        PinKeyPolicy::IsValid(L"0", pins, settings, 0) &&
         std::find(available.begin(), available.end(), L'p') == available.end();
 }
 
