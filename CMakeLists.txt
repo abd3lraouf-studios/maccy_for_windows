@@ -307,7 +307,12 @@ if(MSVC)
         get_filename_component(MACCY_MSVC_RUNTIME_VERSION_DIR "${MACCY_MSVC_RUNTIME_ARCH_DIR}" DIRECTORY)
         get_filename_component(MACCY_MSVC_RUNTIME_VERSION "${MACCY_MSVC_RUNTIME_VERSION_DIR}" NAME)
         get_filename_component(MACCY_MSVC_TOOLSET_VERSION "${MACCY_MSVC_TOOLSET_DIR}" NAME)
-        if(MACCY_MSVC_RUNTIME_VERSION VERSION_LESS MACCY_MSVC_TOOLSET_VERSION)
+        # One Visual Studio release names its Redist and Tools folders with
+        # different build numbers (VS 17.14: Redist 14.44.35112 holds the
+        # 14.44.35211 DLLs, Tools is 14.44.35207), so compare major.minor only.
+        string(REGEX MATCH "^[0-9]+\\.[0-9]+" MACCY_MSVC_RUNTIME_RELEASE "${MACCY_MSVC_RUNTIME_VERSION}")
+        string(REGEX MATCH "^[0-9]+\\.[0-9]+" MACCY_MSVC_TOOLSET_RELEASE "${MACCY_MSVC_TOOLSET_VERSION}")
+        if(MACCY_MSVC_RUNTIME_RELEASE VERSION_LESS MACCY_MSVC_TOOLSET_RELEASE)
             message(FATAL_ERROR
                 "Selected MSVC runtime ${MACCY_MSVC_RUNTIME_VERSION} is older than compiler toolset ${MACCY_MSVC_TOOLSET_VERSION}.")
         endif()
