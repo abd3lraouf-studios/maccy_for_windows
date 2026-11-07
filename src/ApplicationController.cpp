@@ -122,7 +122,18 @@ void ApplicationController::HandleClipboardUpdate() {
 
     if (previous_ignore_events != m_settings.ignore_events ||
         previous_ignore_only != m_settings.ignore_only_next_event) {
-        m_storage.SaveSettings(m_settings);
+        // Async like MainWindow::PersistSettings: this runs inside
+        // WM_CLIPBOARDUPDATE, which must neither wait on the storage thread nor
+        // let an exception escape (Enqueue throws once the worker is stopping).
+        // The in-memory toggle already changed, so the UI is refreshed either way.
+        try {
+            m_storage.SaveSettingsAsync(m_settings);
+        } catch (const std::exception &error) {
+            ::OutputDebugStringA(error.what());
+            ::OutputDebugStringA("\n");
+        } catch (...) {
+            ::OutputDebugStringA("Unable to queue the ignore-events settings save\n");
+        }
         if (m_requestUiUpdate) {
             m_requestUiUpdate(AppConstants::UiUpdate::kFooter | AppConstants::UiUpdate::kTray);
         }
