@@ -2284,11 +2284,19 @@ LRESULT MainWindow::OnSize(UINT, WPARAM, LPARAM, BOOL& handled) {
 
 LRESULT MainWindow::OnDpiChanged(UINT, WPARAM wParam, LPARAM lParam, BOOL& handled) {
     handled = TRUE;
-    if (m_historyRenderer.UpdateFonts(HIWORD(wParam))) {
+    const UINT dpi = HIWORD(wParam);
+    if (m_historyRenderer.UpdateFonts(dpi)) {
         ApplyHistoryFonts();
     }
+    // PositionPopup sizes the popup for the monitor it moves it to, and that
+    // move sends this message; the suggested rect would scale it a second
+    // time. A drag between monitors still takes the suggestion.
+    RECT current{};
+    const bool sized_for_dpi = GetWindowRect(&current) &&
+        current.right - current.left == PopupWidth(dpi) &&
+        current.bottom - current.top == PopupHeight(dpi);
     const auto* suggested = reinterpret_cast<const RECT*>(lParam);
-    if (suggested != nullptr) {
+    if (suggested != nullptr && !sized_for_dpi) {
         SetWindowPos(nullptr, suggested->left, suggested->top,
                      suggested->right - suggested->left, suggested->bottom - suggested->top,
                      SWP_NOZORDER | SWP_NOACTIVATE);
