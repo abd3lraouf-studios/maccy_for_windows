@@ -62,6 +62,7 @@ public:
         MESSAGE_HANDLER(WM_PAINT, OnPaint)
         MESSAGE_HANDLER(WM_ERASEBKGND, OnEraseBackground)
         MESSAGE_HANDLER(WM_CTLCOLOREDIT, OnSearchEditColor)
+        MESSAGE_HANDLER(WM_CTLCOLORLISTBOX, OnListBoxColor)
         MESSAGE_HANDLER(WM_DRAWITEM, OnDrawItem)
         MESSAGE_HANDLER(AppConstants::kPopupDismissMessage, OnPopupDismiss)
         MESSAGE_HANDLER(WM_ACTIVATEAPP, OnActivateApp)
@@ -81,6 +82,9 @@ public:
         MESSAGE_HANDLER(AppConstants::kTrayIconMessage, OnTrayIcon)
         MESSAGE_HANDLER(WM_DISPLAYCHANGE, OnDisplayChange)
         MESSAGE_HANDLER(WM_SETTINGCHANGE, OnSettingChange)
+        MESSAGE_HANDLER(WM_SYSCOLORCHANGE, OnThemeChange)
+        MESSAGE_HANDLER(WM_DWMCOLORIZATIONCOLORCHANGED, OnThemeChange)
+        MESSAGE_HANDLER(WM_THEMECHANGED, OnThemeChange)
         MESSAGE_HANDLER(m_taskbarCreatedMessage, OnTaskbarCreated)
         MESSAGE_HANDLER(AppConstants::kUiUpdateMessage, OnUiUpdate)
         MESSAGE_HANDLER(WM_CLIPBOARDUPDATE, OnClipboardUpdate)
@@ -240,6 +244,10 @@ private:
     void RequestUiUpdate(std::uint32_t updateMask);
     void ApplyPendingState();
     void OnSettingsChanged(const AppSettings &settings, std::uint32_t requestedUpdates);
+    // Theme: RefreshTheme resolves the palette and, when it changed, ApplyTheme
+    // re-themes and repaints the popup, tooltip, preview and settings windows.
+    void RefreshTheme();
+    void ApplyTheme();
     bool StartUpdateCheck(UpdateCheckMode mode);
     void HandleUpdateCheckResult(const UpdateCheckResult &result);
 
@@ -259,6 +267,8 @@ private:
     LRESULT OnPaint(UINT, WPARAM, LPARAM, BOOL&);
     LRESULT OnEraseBackground(UINT, WPARAM, LPARAM, BOOL&);
     LRESULT OnSearchEditColor(UINT, WPARAM wParam, LPARAM lParam, BOOL& handled);
+    LRESULT OnListBoxColor(UINT, WPARAM wParam, LPARAM, BOOL& handled);
+    LRESULT OnThemeChange(UINT, WPARAM, LPARAM, BOOL& handled);
     LRESULT OnDrawItem(UINT, WPARAM, LPARAM lParam, BOOL& handled);
     LRESULT OnPopupDismiss(UINT, WPARAM, LPARAM, BOOL& handled);
     LRESULT OnActivateApp(UINT, WPARAM wParam, LPARAM, BOOL& handled);
@@ -286,7 +296,7 @@ private:
     LRESULT OnImeEnd(UINT, WPARAM, LPARAM, BOOL& handled);
     LRESULT OnTrayIcon(UINT, WPARAM wParam, LPARAM lParam, BOOL&);
     LRESULT OnDisplayChange(UINT, WPARAM, LPARAM, BOOL& handled);
-    LRESULT OnSettingChange(UINT, WPARAM, LPARAM lParam, BOOL& handled);
+    LRESULT OnSettingChange(UINT message, WPARAM wParam, LPARAM lParam, BOOL& handled);
     LRESULT OnTaskbarCreated(UINT, WPARAM, LPARAM, BOOL& handled);
     LRESULT OnUiUpdate(UINT, WPARAM, LPARAM, BOOL& handled);
     LRESULT OnClipboardUpdate(UINT, WPARAM, LPARAM, BOOL& handled);

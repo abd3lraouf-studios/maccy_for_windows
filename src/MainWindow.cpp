@@ -5,6 +5,7 @@
 #include "Localization.h"
 #include "PinKeys.h"
 #include "SettingsWindow.h"
+#include "Theme.h"
 #include "TrayIcon.h"
 #include "UiFont.h"
 
@@ -274,7 +275,7 @@ void MainWindow::DrawSearchCue(CDC dc) const {
         font != nullptr ? font : ::GetStockObject(DEFAULT_GUI_FONT)
     );
     const int previous_mode = dc.SetBkMode(TRANSPARENT);
-    const COLORREF previous_color = dc.SetTextColor(::GetSysColor(COLOR_GRAYTEXT));
+    const COLORREF previous_color = dc.SetTextColor(Theme::Current().muted);
     const std::wstring cue = Localization::Text(IDS_MAIN_SEARCH_CUE);
     dc.DrawText(cue.c_str(), -1, &rect,
         DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
@@ -1362,7 +1363,12 @@ bool MainWindow::EnsurePreviewWindow() {
     if (m_previewWindow.m_hWnd != nullptr && ::IsWindow(m_previewWindow.m_hWnd)) {
         return true;
     }
-    return m_previewWindow.Initialize(m_hWnd);
+    if (!m_previewWindow.Initialize(m_hWnd)) {
+        return false;
+    }
+    // Themed while still hidden, so it never shows a light frame first.
+    Theme::ApplyToWindow(m_previewWindow.m_hWnd);
+    return true;
 }
 
 bool MainWindow::IsPreviewVisible() const noexcept {
@@ -2077,6 +2083,9 @@ std::uint32_t MainWindow::ApplySettings(
 ) {
     const AppSettings previous = m_settings;
     m_settings = settings;
+    if (previous.theme != m_settings.theme || previous.theme_mode != m_settings.theme_mode) {
+        RefreshTheme();
+    }
 
     std::uint32_t updates = requestedUpdates &
         (AppConstants::UiUpdate::kHistory |
@@ -2184,6 +2193,30 @@ void MainWindow::ToggleIgnoreEvents() {
     SetIgnorePolicy(ignore, ignore ? m_settings.ignore_only_next_event : false);
 }
 
+// Only this window resolves the palette: it is top level, so it hears the
+// system's theme broadcasts even while the popup is hidden, and it owns every
+// window that paints with the palette.
+void MainWindow::RefreshTheme() {
+    if (Theme::Update(m_settings.theme, m_settings.theme_mode)) {
+        ApplyTheme();
+    }
+}
+
+void MainWindow::ApplyTheme() {
+    // ApplyToWindow also redraws the window with all its children, which
+    // repaints the header, lists and footer in the new colours.
+    Theme::ApplyToWindow(m_hWnd);
+    Theme::ApplyToControl(m_tooltips.m_hWnd);
+    CWindow preview(m_previewWindow.m_hWnd);
+    CWindow settings(m_settingsWindow != nullptr ? m_settingsWindow->Window() : nullptr);
+    for (CWindow window : {preview, settings}) {
+        if (window.m_hWnd != nullptr && window.IsWindow()) {
+            Theme::ApplyToWindow(window);
+            window.SendMessage(AppConstants::kThemeChangedMessage);
+        }
+    }
+}
+
 void MainWindow::OnSettingsChanged(const AppSettings &settings, std::uint32_t requestedUpdates) {
     const std::uint32_t updates = ApplySettings(settings, requestedUpdates);
     if ((requestedUpdates & AppConstants::UiUpdate::kIgnoreRules) != 0) {
@@ -2277,9 +2310,13 @@ bool MainWindow::InitializeHistoryControls() {
 
 LRESULT MainWindow::OnInitDialog(UINT, WPARAM, LPARAM, BOOL& handled) {
     handled = TRUE;
+    // Resolve the palette before any window paints with it.
+    Theme::Update(m_settings.theme, m_settings.theme_mode);
     if (!InitializeHistoryControls()) {
         return FALSE;
     }
+    // The controls are bound and the tooltip exists only now.
+    ApplyTheme();
     return TRUE;
 }
 
@@ -2454,10 +2491,27 @@ LRESULT MainWindow::OnEraseBackground(UINT, WPARAM, LPARAM, BOOL&) {
 LRESULT MainWindow::OnSearchEditColor(UINT, WPARAM wParam, LPARAM lParam, BOOL& handled) {
     handled = reinterpret_cast<HWND>(lParam) == m_search.m_hWnd;
     if (!handled) return 0;
-    HDC dc = reinterpret_cast<HDC>(wParam);
-    SetTextColor(dc, GetSysColor(COLOR_WINDOWTEXT));
-    SetBkColor(dc, GetSysColor(COLOR_BTNFACE));
-    return reinterpret_cast<LRESULT>(GetSysColorBrush(COLOR_BTNFACE));
+    // The edit sits on the search pill, so it takes the pill's surface colour.
+    CDCHandle dc(reinterpret_cast<HDC>(wParam));
+    dc.SetTextColor(Theme::Current().text);
+    dc.SetBkColor(Theme::Current().surface);
+    return reinterpret_cast<LRESULT>(Theme::SurfaceBrush());
+}
+
+LRESULT MainWindow::OnListBoxColor(UINT, WPARAM wParam, LPARAM, BOOL& handled) {
+    // Rows paint themselves; this brush covers whatever the list erases itself.
+    handled = TRUE;
+    CDCHandle dc(reinterpret_cast<HDC>(wParam));
+    dc.SetTextColor(Theme::Current().text);
+    dc.SetBkColor(Theme::Current().window);
+    return reinterpret_cast<LRESULT>(Theme::WindowBrush());
+}
+
+LRESULT MainWindow::OnThemeChange(UINT, WPARAM, LPARAM, BOOL& handled) {
+    // Child controls and other code may also act on these messages.
+    handled = FALSE;
+    RefreshTheme();
+    return 0;
 }
 
 LRESULT MainWindow::OnDrawItem(UINT, WPARAM, LPARAM lParam, BOOL& handled) {
@@ -2777,13 +2831,16 @@ LRESULT MainWindow::OnDisplayChange(UINT, WPARAM, LPARAM, BOOL& handled) {
     return 0;
 }
 
-LRESULT MainWindow::OnSettingChange(UINT, WPARAM, LPARAM lParam, BOOL& handled) {
+LRESULT MainWindow::OnSettingChange(UINT message, WPARAM wParam, LPARAM lParam, BOOL& handled) {
     handled = FALSE;
     // The tray icon's light or dark variant follows the taskbar theme, which
     // this area announces when it changes.
     const auto *area = reinterpret_cast<LPCWSTR>(lParam);
     if (area != nullptr && ::lstrcmpW(area, L"ImmersiveColorSet") == 0) {
         RequestUiUpdate(AppConstants::UiUpdate::kTray);
+    }
+    if (Theme::IsThemeChangeMessage(message, wParam, lParam)) {
+        RefreshTheme();
     }
     return 0;
 }

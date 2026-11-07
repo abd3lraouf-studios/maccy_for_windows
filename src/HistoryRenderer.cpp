@@ -3,6 +3,7 @@
 #include "ClipboardRules.h"
 #include "GdiScope.h"
 #include "Localization.h"
+#include "Theme.h"
 
 #include <algorithm>
 #include <array>
@@ -82,41 +83,13 @@ std::optional<COLORREF> ParseHexColor(std::wstring_view text) {
     return RGB((value >> 16) & 0xFF, (value >> 8) & 0xFF, value & 0xFF);
 }
 
-bool HighContrastEnabled() {
-    HIGHCONTRASTW contrast{};
-    contrast.cbSize = sizeof(contrast);
-    return ::SystemParametersInfoW(SPI_GETHIGHCONTRAST, sizeof(contrast), &contrast, 0) != FALSE &&
-        (contrast.dwFlags & HCF_HIGHCONTRASTON) != 0;
-}
-
-COLORREF MixColors(COLORREF foreground, COLORREF background, int foreground_percent) {
-    const auto mix = [foreground_percent](int front, int back) {
-        return (front * foreground_percent + back * (100 - foreground_percent) + 50) / 100;
-    };
-    return RGB(mix(GetRValue(foreground), GetRValue(background)),
-               mix(GetGValue(foreground), GetGValue(background)),
-               mix(GetBValue(foreground), GetBValue(background)));
-}
-
-struct MatchColors {
-    COLORREF text;
-    COLORREF background;
-};
-
-// Colours of a search match drawn with HighlightMatch::Color, all taken from
-// the system colours so they follow the user's theme.
-MatchColors MatchHighlightColors(bool selected_row) {
-    // On the selection bar, the inverse of the bar stays visible in every theme.
-    if (selected_row) {
-        return {GetSysColor(COLOR_HIGHLIGHT), GetSysColor(COLOR_HIGHLIGHTTEXT)};
-    }
-    // High contrast themes only guarantee their own colour pairs to be legible.
-    if (HighContrastEnabled()) {
-        return {GetSysColor(COLOR_HIGHLIGHTTEXT), GetSysColor(COLOR_HIGHLIGHT)};
-    }
-    // A light tint of the selection colour marks a match without looking selected.
-    return {GetSysColor(COLOR_WINDOWTEXT),
-            MixColors(GetSysColor(COLOR_HIGHLIGHT), GetSysColor(COLOR_WINDOW), 25)};
+// The DC brush takes any palette colour without creating a GDI brush per row.
+void FillRoundRect(HDC dc, const RECT &rect, int radius, COLORREF color) {
+    ScopedGdiObjectSelection null_pen(dc, GetStockObject(NULL_PEN));
+    ScopedGdiObjectSelection brush(dc, GetStockObject(DC_BRUSH));
+    const COLORREF previous = SetDCBrushColor(dc, color);
+    RoundRect(dc, rect.left, rect.top, rect.right, rect.bottom, radius, radius);
+    SetDCBrushColor(dc, previous);
 }
 
 } // namespace
@@ -520,7 +493,12 @@ void HistoryRenderer::DrawTextWithHighlights(HDC dc, RECT rect, sqlite3_int64 it
         dc,
         m_normalFont != nullptr ? m_normalFont : GetStockObject(DEFAULT_GUI_FONT)
     );
-    SetTextColor(dc, GetSysColor(selected ? COLOR_HIGHLIGHTTEXT : COLOR_WINDOWTEXT));
+    const Theme::Palette &palette = Theme::Current();
+    const COLORREF row_text = selected ? palette.accent_text : palette.text;
+    // A match on the selection bar is the inverse of the bar, which stays
+    // legible on any accent; elsewhere the theme's own match pair.
+    const COLORREF match_text = selected ? palette.accent : palette.match_text;
+    const COLORREF match_background = selected ? palette.accent_text : palette.match;
     std::vector<std::pair<size_t, size_t>> segments;
     size_t position = 0;
     for (const auto& [start, end] : ranges) {
@@ -537,9 +515,6 @@ void HistoryRenderer::DrawTextWithHighlights(HDC dc, RECT rect, sqlite3_int64 it
         segments.emplace_back(0, text.size());
     }
 
-    const int old_bk_mode = SetBkMode(dc, TRANSPARENT);
-    const COLORREF old_text = GetTextColor(dc);
-    const MatchColors match_colors = MatchHighlightColors(selected);
     int x = rect.left;
     for (const auto& [start, end] : segments) {
         if (end <= start) {
@@ -560,11 +535,11 @@ void HistoryRenderer::DrawTextWithHighlights(HDC dc, RECT rect, sqlite3_int64 it
             font != nullptr ? font : GetStockObject(DEFAULT_GUI_FONT)
         );
         if (highlighted && m_settings.highlight_match == HighlightMatch::Color) {
-            SetTextColor(dc, match_colors.text);
+            SetTextColor(dc, match_text);
             SetBkMode(dc, OPAQUE);
-            SetBkColor(dc, match_colors.background);
+            SetBkColor(dc, match_background);
         } else {
-            SetTextColor(dc, selected ? GetSysColor(COLOR_HIGHLIGHTTEXT) : old_text);
+            SetTextColor(dc, row_text);
             SetBkMode(dc, TRANSPARENT);
         }
         GetTextExtentPoint32W(dc, part.c_str(), static_cast<int>(part.size()), &size);
@@ -574,8 +549,6 @@ void HistoryRenderer::DrawTextWithHighlights(HDC dc, RECT rect, sqlite3_int64 it
             break;
         }
     }
-    SetTextColor(dc, old_text);
-    SetBkMode(dc, old_bk_mode);
 }
 
 UniqueIcon HistoryRenderer::LoadShellIcon(const std::wstring &path) {
@@ -702,27 +675,22 @@ void HistoryRenderer::DrawHistoryItem(DRAWITEMSTRUCT* draw,
     // list in one copy instead of flashing in stages while it repaints.
     CMemoryDC canvas(draw->hDC, draw->rcItem);
     const HDC dc = canvas.m_hDC;
-    FillRect(dc, &draw->rcItem, GetSysColorBrush(COLOR_WINDOW));
+    const Theme::Palette &palette = Theme::Current();
+    // Markers drawn beside the text: muted, or the selection's text colour on the bar.
+    const COLORREF marker = selected ? palette.accent_text : palette.muted;
+    FillRect(dc, &draw->rcItem, Theme::WindowBrush());
     if (selected) {
-        {
-            ScopedGdiObjectSelection null_pen(dc, GetStockObject(NULL_PEN));
-            ScopedGdiObjectSelection highlight_brush(
-                dc,
-                GetSysColorBrush(COLOR_HIGHLIGHT)
-            );
-            RECT selected_rect = layout.background;
-            const bool previous_selected = index > 0 && index - 1 == activeIndex;
-            const bool next_selected = index + 1 < static_cast<int>(items.size()) && index + 1 == activeIndex;
-            if (previous_selected) selected_rect.top = draw->rcItem.top;
-            if (next_selected) selected_rect.bottom = draw->rcItem.bottom;
-            RoundRect(dc, selected_rect.left, selected_rect.top, selected_rect.right, selected_rect.bottom,
-                radius, radius);
-            if (previous_selected || next_selected) {
-                RECT join = selected_rect;
-                join.left += radius / 2;
-                join.right -= radius / 2;
-                FillRect(dc, &join, GetSysColorBrush(COLOR_HIGHLIGHT));
-            }
+        RECT selected_rect = layout.background;
+        const bool previous_selected = index > 0 && index - 1 == activeIndex;
+        const bool next_selected = index + 1 < static_cast<int>(items.size()) && index + 1 == activeIndex;
+        if (previous_selected) selected_rect.top = draw->rcItem.top;
+        if (next_selected) selected_rect.bottom = draw->rcItem.bottom;
+        FillRoundRect(dc, selected_rect, radius, palette.accent);
+        if (previous_selected || next_selected) {
+            RECT join = selected_rect;
+            join.left += radius / 2;
+            join.right -= radius / 2;
+            canvas.FillSolidRect(&join, palette.accent);
         }
     }
     ScopedGdiObjectSelection normal_font_selection(
@@ -773,10 +741,9 @@ void HistoryRenderer::DrawHistoryItem(DRAWITEMSTRUCT* draw,
             }
         } else {
             // Placeholder frame until the image thumbnail arrives; only image
-            // rows reach this branch. System colours keep it visible in any theme.
+            // rows reach this branch.
             CPen marker_pen;
-            if (marker_pen.CreatePen(PS_SOLID, 1,
-                    GetSysColor(selected ? COLOR_HIGHLIGHTTEXT : COLOR_GRAYTEXT))) {
+            if (marker_pen.CreatePen(PS_SOLID, 1, marker)) {
                 ScopedGdiObjectSelection pen_selection(dc, marker_pen);
                 ScopedGdiObjectSelection brush_selection(dc, GetStockObject(NULL_BRUSH));
                 Rectangle(dc, layout.attachment.left + 1, layout.attachment.top + 2,
@@ -790,7 +757,11 @@ void HistoryRenderer::DrawHistoryItem(DRAWITEMSTRUCT* draw,
         if (brush.CreateSolidBrush(*swatch_color)) {
             FillRect(dc, &layout.swatch, brush);
         }
-        FrameRect(dc, &layout.swatch, GetSysColorBrush(COLOR_GRAYTEXT));
+        // The frame keeps a swatch of the row's own colour visible. The stock
+        // DC brush paints in the colour set on this DC.
+        const COLORREF previous = SetDCBrushColor(dc, marker);
+        FrameRect(dc, &layout.swatch, static_cast<HBRUSH>(GetStockObject(DC_BRUSH)));
+        SetDCBrushColor(dc, previous);
     }
 
     std::wstring shortcut;
@@ -806,7 +777,7 @@ void HistoryRenderer::DrawHistoryItem(DRAWITEMSTRUCT* draw,
     }
     RECT keyRect = layout.shortcut;
     SetBkMode(dc, TRANSPARENT);
-    SetTextColor(dc, GetSysColor(selected ? COLOR_HIGHLIGHTTEXT : COLOR_GRAYTEXT));
+    SetTextColor(dc, marker);
     DrawTextW(dc, shortcut.c_str(), -1, &keyRect, DT_RIGHT | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
     text_rect.right = layout.content.right;
     DrawTextWithHighlights(dc, text_rect, item.id, text, selected, searchQuery);
@@ -828,25 +799,21 @@ void HistoryRenderer::DrawMenuButton(DRAWITEMSTRUCT* draw,
     // Off screen for the same reason as the history rows.
     CMemoryDC canvas(draw->hDC, draw->rcItem);
     const HDC dc = canvas.m_hDC;
-    FillRect(dc, &draw->rcItem, GetSysColorBrush(COLOR_WINDOW));
+    const Theme::Palette &palette = Theme::Current();
+    const COLORREF marker = selected ? palette.accent_text : palette.muted;
+    FillRect(dc, &draw->rcItem, Theme::WindowBrush());
     if (selected || (draw->itemState & ODS_SELECTED)) {
-        ScopedGdiObjectSelection null_pen(dc, GetStockObject(NULL_PEN));
-        ScopedGdiObjectSelection background_brush(
-            dc,
-            GetSysColorBrush(selected ? COLOR_HIGHLIGHT : COLOR_BTNFACE)
-        );
         RECT selected_rect = draw->rcItem;
         selected_rect.left += inset;
         selected_rect.right -= inset;
-        RoundRect(dc, selected_rect.left, selected_rect.top,
-            selected_rect.right, selected_rect.bottom, radius, radius);
+        FillRoundRect(dc, selected_rect, radius, selected ? palette.accent : palette.surface);
     }
     ScopedGdiObjectSelection normal_font_selection(
         dc,
         m_normalFont != nullptr ? m_normalFont : GetStockObject(DEFAULT_GUI_FONT)
     );
     SetBkMode(dc, TRANSPARENT);
-    SetTextColor(dc, GetSysColor(selected ? COLOR_HIGHLIGHTTEXT : COLOR_WINDOWTEXT));
+    SetTextColor(dc, selected ? palette.accent_text : palette.text);
     RECT rect = draw->rcItem;
     rect.left += left_padding;
     rect.right -= right_padding;
@@ -860,7 +827,7 @@ void HistoryRenderer::DrawMenuButton(DRAWITEMSTRUCT* draw,
         const int left = draw->rcItem.left + (width - iconWidth) / 2;
         const int top = draw->rcItem.top + (height - iconHeight) / 2;
         CPen pen;
-        if (pen.CreatePen(PS_SOLID, 1, GetSysColor(selected ? COLOR_HIGHLIGHTTEXT : COLOR_GRAYTEXT))) {
+        if (pen.CreatePen(PS_SOLID, 1, marker)) {
             ScopedGdiObjectSelection pen_selection(dc, pen);
             ScopedGdiObjectSelection brush_selection(dc, GetStockObject(NULL_BRUSH));
             Rectangle(dc, left, top, left + iconWidth, top + iconHeight);
@@ -894,7 +861,7 @@ void HistoryRenderer::DrawMenuButton(DRAWITEMSTRUCT* draw,
     DrawTextW(dc, title.c_str(), -1, &rect,
         DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX | DT_LEFT);
     if (key != nullptr && *key != L'\0') {
-        SetTextColor(dc, GetSysColor(selected ? COLOR_HIGHLIGHTTEXT : COLOR_GRAYTEXT));
+        SetTextColor(dc, marker);
         DrawTextW(dc, key, -1, &key_rect,
             DT_RIGHT | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
     }
@@ -916,9 +883,10 @@ void HistoryRenderer::OnPaint(HDC windowDc, const RECT& client,
     }
     CMemoryDC canvas(windowDc, paint);
     const HDC dc = canvas.m_hDC;
-    FillRect(dc, &client, GetSysColorBrush(COLOR_WINDOW));
+    const Theme::Palette &palette = Theme::Current();
+    FillRect(dc, &client, Theme::WindowBrush());
     CPen separator;
-    if (separator.CreatePen(PS_SOLID, 1, GetSysColor(COLOR_3DLIGHT))) {
+    if (separator.CreatePen(PS_SOLID, 1, palette.border)) {
         ScopedGdiObjectSelection pen_selection(dc, separator);
         const int inset = SearchHeaderLayout::Scale(kSeparatorInset, UiFont::DpiForWindow(m_owner));
         for (int y : {pinSeparatorY, footerSeparatorY}) if (y >= 0) {
@@ -926,15 +894,9 @@ void HistoryRenderer::OnPaint(HDC windowDc, const RECT& client,
         }
     }
     if (header.showSearch) {
-        {
-            ScopedGdiObjectSelection null_pen(dc, GetStockObject(NULL_PEN));
-            ScopedGdiObjectSelection background_brush(dc, GetSysColorBrush(COLOR_BTNFACE));
-            RoundRect(dc, header.search.left, header.search.top,
-                      header.search.right, header.search.bottom,
-                      header.metrics.cornerRadius, header.metrics.cornerRadius);
-        }
+        FillRoundRect(dc, header.search, header.metrics.cornerRadius, palette.surface);
         CPen iconPen;
-        if (iconPen.CreatePen(PS_SOLID, 1, GetSysColor(COLOR_GRAYTEXT))) {
+        if (iconPen.CreatePen(PS_SOLID, 1, palette.muted)) {
             {
                 ScopedGdiObjectSelection pen_selection(dc, iconPen);
                 ScopedGdiObjectSelection brush_selection(dc, GetStockObject(NULL_BRUSH));
@@ -964,7 +926,7 @@ void HistoryRenderer::OnPaint(HDC windowDc, const RECT& client,
             ? static_cast<HFONT>(m_normalFont)
             : static_cast<HFONT>(m_smallFont);
         ScopedGdiObjectSelection font_selection(dc, title_font);
-        const int previous_color = SetTextColor(dc, GetSysColor(COLOR_GRAYTEXT));
+        const COLORREF previous_color = SetTextColor(dc, palette.muted);
         const int previous_mode = SetBkMode(dc, TRANSPARENT);
         RECT title = header.title;
         DrawTextW(dc, L"maccy", -1, &title, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
