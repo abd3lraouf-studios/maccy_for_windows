@@ -17,7 +17,6 @@ The licenses and copyright notices of WTL, SQLite, Boost.Beast, Boost.JSON, Boos
 
 - `licenses/boost-beast/copyright`
 - `licenses/boost-json/copyright`
-- `licenses/boost-locale/copyright`
 - `licenses/boost-system/copyright`
 - `licenses/openssl/copyright`
 - `licenses/wtl/copyright`
