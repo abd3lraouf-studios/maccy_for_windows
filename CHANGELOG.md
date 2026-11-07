@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.6.0](https://github.com/abd3lraouf-studios/maccy_for_windows/compare/v1.5.0...v1.6.0) (2026-11-08)
+
+### Features
+
+* **theme:** eleven themes, each with an official light and dark variant: Windows (system accent), Solarized, Monokai Pro, Dracula (Alucard), Nord, Gruvbox, Catppuccin (Latte/Mocha), Tokyo Night (Day/Night), One, GitHub, and Rosé Pine (Dawn)
+* **theme:** Mode follows the Windows light/dark setting or forces light or dark; theme, mode, accent-colour and high-contrast changes apply live
+* **theme:** dark mode everywhere Maccy draws: popup, preview, Settings (tabs, check boxes, lists, combo boxes, edit dialogs), tray menu, title bars, borders, and scrollbars
+* **settings:** a Themes tab that picks themes from live previews of the popup
+
+### Bug Fixes
+
+* **settings:** every page uses one spacing grid, so labels no longer touch their controls, fields and buttons have standard sizes, and rows are evenly spaced
+* **settings:** push buttons keep their size instead of shrinking to their caption
+
 ## [1.5.0](https://github.com/abd3lraouf-studios/maccy_for_windows/compare/v1.4.2...v1.5.0) (2026-11-07)
 
 First release of the abd3lraouf-studios fork of [halifox/maccy_for_windows](https://github.com/halifox/maccy_for_windows).
