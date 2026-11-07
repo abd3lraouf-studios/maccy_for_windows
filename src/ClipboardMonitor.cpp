@@ -528,33 +528,15 @@ std::optional<ClipboardSnapshot> ClipboardMonitor::CaptureClipboard() const {
 }
 
 void ClipboardMonitor::ReadClipboardAndSave() {
-    const DWORD sequence = ::GetClipboardSequenceNumber();
-    if (m_selfWriteSequence.has_value()) {
-        if (sequence == *m_selfWriteSequence) {
-            // Our own write's clipboard update — drop the echo (H-01 / H-08).
-            m_selfWriteSequence.reset();
-            return;
-        }
-        // Clipboard advanced past our write without an exact match observation.
-        m_selfWriteSequence.reset();
-    }
-
     std::optional<ClipboardSnapshot> capture;
-    bool opened = false;
     for (int attempt = 0; attempt < 10; ++attempt) {
         ClipboardGuard clipboard(m_owner);
         if (!clipboard.IsOpen()) {
             ::Sleep(10);
             continue;
         }
-        opened = true;
         capture = CaptureClipboard();
         break;
-    }
-    // Keep going only when open succeeded; leave self-write state alone on busy
-    // open failures so a later update can still suppress an echo (H-02).
-    if (!opened) {
-        return;
     }
     if (!capture.has_value()) {
         return;
@@ -648,6 +630,18 @@ bool ClipboardMonitor::ClearClipboard() {
 }
 
 void ClipboardMonitor::OnClipboardUpdate() {
+    // Recognise our own write before any skip rule: Maccy's paste must not use
+    // up "ignore next copy", which is meant for the user's next real copy.
+    if (m_selfWriteSequence.has_value()) {
+        const bool is_own_write = ::GetClipboardSequenceNumber() == *m_selfWriteSequence;
+        // Either way the marker is spent: a later sequence means the clipboard
+        // already moved past our write.
+        m_selfWriteSequence.reset();
+        if (is_own_write) {
+            // Drop the echo of our own SetClipboardData (H-01 / H-08).
+            return;
+        }
+    }
     // One-shot skip is independent of continuous pause (ignore_events).
     if (m_settings.ignore_only_next_event) {
         m_settings.ignore_only_next_event = false;
