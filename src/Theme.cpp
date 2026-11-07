@@ -271,17 +271,17 @@ BOOL CALLBACK ApplyToChild(HWND child, LPARAM) {
 
 } // namespace
 
-bool Update(ThemeFamily family, ThemeMode mode) {
+Palette Preview(ThemeFamily family, bool dark) {
     const int index = static_cast<int>(family);
-    const bool dark = mode == ThemeMode::Dark || (mode == ThemeMode::System && SystemUsesDarkApps());
-    Palette next;
-    if (HighContrastOn()) {
-        next = HighContrastPalette();
-    } else if (index <= 0 || index >= kThemeFamilyCount) {
-        next = WindowsPalette(dark);
-    } else {
-        next = FromVariant(dark ? kThemes[index].dark : kThemes[index].light, dark);
+    if (index <= 0 || index >= kThemeFamilyCount) {
+        return WindowsPalette(dark);
     }
+    return FromVariant(dark ? kThemes[index].dark : kThemes[index].light, dark);
+}
+
+bool Update(ThemeFamily family, ThemeMode mode) {
+    const bool dark = mode == ThemeMode::Dark || (mode == ThemeMode::System && SystemUsesDarkApps());
+    const Palette next = HighContrastOn() ? HighContrastPalette() : Preview(family, dark);
     if (g_resolved && SamePalette(next, g_palette)) {
         return false;
     }
