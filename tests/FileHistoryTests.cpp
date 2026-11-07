@@ -47,7 +47,8 @@ ClipboardSnapshot Capture(ClipboardFormatData data, bool image = false) {
 
 void CheckFileMetadata() {
     const std::vector<std::wstring> paths{
-        L"C:\\目录\\archive; backup.zip",
+        // Non-ASCII on purpose: paths must survive the UTF-16 round trip.
+        L"C:\\Caf\u00e9 r\u00e9sum\u00e9s\\archive; backup.zip",
         L"C:\\" + std::wstring(5000, L'a') + L"\\photo.png",
     };
     auto files = Files(paths);
