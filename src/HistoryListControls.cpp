@@ -486,6 +486,31 @@ LRESULT HistoryListControls::OnHistoryListTimer(UINT, WPARAM wParam, LPARAM, BOO
     return 0;
 }
 
+LRESULT HistoryListControls::OnHistoryListEraseBackground(
+    UINT,
+    WPARAM wParam,
+    LPARAM,
+    BOOL &handled
+) {
+    // Every row paints its own background, so erasing the whole list first
+    // only flashes the rows blank on each resize or redraw. Fill just the
+    // strip below the last row, which no row covers.
+    handled = TRUE;
+    CListBox &list = CurrentHistoryList();
+    RECT empty{};
+    if (!list.GetClientRect(&empty)) {
+        return 1;
+    }
+    const int count = list.GetCount();
+    for (int row = list.GetTopIndex(); row < count && empty.top < empty.bottom; ++row) {
+        empty.top += std::max(1, list.GetItemHeight(row));
+    }
+    if (empty.top < empty.bottom) {
+        CDCHandle(reinterpret_cast<HDC>(wParam)).FillRect(&empty, COLOR_WINDOW);
+    }
+    return 1;
+}
+
 LRESULT HistoryListControls::OnHistoryListSelectionChanged(
     WORD,
     WORD id,

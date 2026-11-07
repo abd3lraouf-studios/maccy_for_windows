@@ -69,6 +69,7 @@ public:
         MESSAGE_HANDLER(WM_MOUSEWHEEL, OnHistoryListScroll)
         MESSAGE_HANDLER(WM_VSCROLL, OnHistoryListScroll)
         MESSAGE_HANDLER(WM_TIMER, OnHistoryListTimer)
+        MESSAGE_HANDLER(WM_ERASEBKGND, OnHistoryListEraseBackground)
         REFLECTED_COMMAND_HANDLER(IDC_HISTORY_LIST, LBN_SELCHANGE, OnHistoryListSelectionChanged)
         REFLECTED_COMMAND_HANDLER(IDC_HISTORY_PINS, LBN_SELCHANGE, OnHistoryListSelectionChanged)
         MESSAGE_HANDLER(OCM_MEASUREITEM, OnMeasureItem)
@@ -91,6 +92,7 @@ private:
     LRESULT OnHistoryListButtonUp(UINT, WPARAM, LPARAM lParam, BOOL &handled);
     LRESULT OnHistoryListScroll(UINT message, WPARAM wParam, LPARAM lParam, BOOL &handled);
     LRESULT OnHistoryListTimer(UINT, WPARAM wParam, LPARAM, BOOL &handled);
+    LRESULT OnHistoryListEraseBackground(UINT, WPARAM wParam, LPARAM, BOOL &handled);
     void ScrollWheel(CListBox &list, int delta);
     int WheelPageRows(const CListBox &list) const;
     void FinishWheelGesture();

@@ -57,7 +57,7 @@ public:
     void DrawMenuButton(DRAWITEMSTRUCT* draw,
                         int activeFooter,
                         const std::array<CButton, AppConstants::UI::kFooterButtonCount>& footerButtons);
-    void OnPaint(HDC dc, const RECT& client,
+    void OnPaint(HDC windowDc, const RECT& client,
                  int pinSeparatorY,
                  int footerSeparatorY,
                  const SearchHeaderLayout::Geometry& header,
