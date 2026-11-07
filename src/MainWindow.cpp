@@ -172,6 +172,22 @@ constexpr DWORD kTrayReshowWindowMs = 300;
 // Space between the tray icon and the popup opened from it.
 constexpr int kTrayPopupGapDip = 6;
 
+// Timers of this window only; the IDs stay clear of AppConstants::Timer's
+// sequence, whose timers share the window.
+constexpr UINT_PTR kPopupDeactivatedTimer = 101;
+
+bool IsMouseButtonDown() {
+    return (::GetAsyncKeyState(VK_LBUTTON) & 0x8000) != 0 ||
+        (::GetAsyncKeyState(VK_RBUTTON) & 0x8000) != 0 ||
+        (::GetAsyncKeyState(VK_MBUTTON) & 0x8000) != 0;
+}
+
+bool IsForegroundOnThisThread() {
+    const HWND foreground = ::GetForegroundWindow();
+    return foreground != nullptr &&
+        ::GetWindowThreadProcessId(foreground, nullptr) == ::GetCurrentThreadId();
+}
+
 int ScaleDip(HWND window, int dip) {
     const UINT dpi = window != nullptr ? UiFont::DpiForWindow(window) : USER_DEFAULT_SCREEN_DPI;
     return ::MulDiv(dip, static_cast<int>(dpi), USER_DEFAULT_SCREEN_DPI);
@@ -2469,6 +2485,23 @@ LRESULT MainWindow::OnPopupDismiss(UINT, WPARAM wParam, LPARAM lParam, BOOL& han
     return 0;
 }
 
+// Alt+Tab, the Win key or another program taking focus would leave the
+// topmost popup on screen without keyboard focus. The preview, settings,
+// message boxes and IME windows run on this thread, so they never send this.
+LRESULT MainWindow::OnActivateApp(UINT, WPARAM wParam, LPARAM, BOOL& handled) {
+    handled = FALSE;
+    // A click elsewhere is the click-outside hook's call: it keeps the popup
+    // for a click on the tray icon, whose NIN_SELECT then closes it.
+    if (wParam != FALSE || !m_popupVisible || IsMouseButtonDown()) {
+        return 0;
+    }
+    // Activation is still moving. Hiding the popup inside it lets Windows
+    // pick a window to activate itself; a timer also runs after the hook's
+    // and the tray's posted messages, which may already have closed it.
+    ::SetTimer(m_hWnd, kPopupDeactivatedTimer, USER_TIMER_MINIMUM, nullptr);
+    return 0;
+}
+
 LRESULT MainWindow::OnHistoryIcons(UINT, WPARAM, LPARAM, BOOL& handled) {
     handled = TRUE;
     if (!m_historyRenderer.ApplyLoadedIcons() || !m_popupVisible ||
@@ -2612,6 +2645,16 @@ LRESULT MainWindow::OnTimer(UINT, WPARAM wParam, LPARAM, BOOL& handled) {
         handled = TRUE;
         KillTimer(AppConstants::Timer::kPreview);
         ShowPreviewForCandidate();
+        return 0;
+    }
+    if (wParam == kPopupDeactivatedTimer) {
+        handled = TRUE;
+        KillTimer(kPopupDeactivatedTimer);
+        // Menus and dialogs run their own loops, which fire this timer too.
+        if (m_popupVisible && !m_modalShowing && !m_trayMenuShowing && !m_exiting &&
+            !IsForegroundOnThisThread()) {
+            HideMainWindow();
+        }
         return 0;
     }
     handled = FALSE;

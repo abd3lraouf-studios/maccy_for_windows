@@ -64,6 +64,7 @@ public:
         MESSAGE_HANDLER(WM_CTLCOLOREDIT, OnSearchEditColor)
         MESSAGE_HANDLER(WM_DRAWITEM, OnDrawItem)
         MESSAGE_HANDLER(AppConstants::kPopupDismissMessage, OnPopupDismiss)
+        MESSAGE_HANDLER(WM_ACTIVATEAPP, OnActivateApp)
         MESSAGE_HANDLER(AppConstants::kHistoryIconMessage, OnHistoryIcons)
         MESSAGE_HANDLER(WM_CLOSE, OnClose)
         MESSAGE_HANDLER(WM_TIMER, OnTimer)
@@ -259,6 +260,7 @@ private:
     LRESULT OnSearchEditColor(UINT, WPARAM wParam, LPARAM lParam, BOOL& handled);
     LRESULT OnDrawItem(UINT, WPARAM, LPARAM lParam, BOOL& handled);
     LRESULT OnPopupDismiss(UINT, WPARAM, LPARAM, BOOL& handled);
+    LRESULT OnActivateApp(UINT, WPARAM wParam, LPARAM, BOOL& handled);
     LRESULT OnHistoryIcons(UINT, WPARAM, LPARAM, BOOL& handled);
     LRESULT OnClose(UINT, WPARAM, LPARAM, BOOL&);
     LRESULT OnCommand(UINT, WPARAM wParam, LPARAM lParam, BOOL& handled);
