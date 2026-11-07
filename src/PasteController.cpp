@@ -8,10 +8,6 @@ bool IsKeyDown(int virtual_key) {
     return (GetAsyncKeyState(virtual_key) & 0x8000) != 0;
 }
 
-bool IsControlOnlyDown() {
-    return IsKeyDown(VK_CONTROL) && !IsKeyDown(VK_MENU) && !IsKeyDown(VK_SHIFT);
-}
-
 bool SendInputs(INPUT *inputs, UINT count) {
     if (inputs == nullptr || count == 0) {
         return false;
@@ -114,18 +110,27 @@ PasteController::PasteResult PasteController::RestoreTargetFocusAndPaste(
         return PasteResult::Failed;
     }
     if (PasteModifiersDown()) {
-        if (IsControlOnlyDown()) {
-            return SendPasteWithHeldControl() ? PasteResult::Sent : PasteResult::Failed;
-        }
         StartPasteTimer(target, target_focus);
         return PasteResult::Deferred;
+    }
+    // A physically held Ctrl (Ctrl+1, Ctrl+Enter) already forms the chord;
+    // injecting our own Ctrl-up would leave Windows thinking it was released.
+    if (IsKeyDown(VK_CONTROL)) {
+        return SendPasteWithHeldControl() ? PasteResult::Sent : PasteResult::Failed;
     }
     return SendControlVPaste() ? PasteResult::Sent : PasteResult::Failed;
 }
 
 bool PasteController::PasteModifiersDown() {
-    // Only Alt blocks an immediate Ctrl+V; Shift alone used to force a 3s wait (M-24).
-    return IsKeyDown(VK_MENU);
+    // The target must see exactly Ctrl+V. Held Shift turns it into Ctrl+Shift+V
+    // (Word: paste formatting only, after the plain-paste chord Ctrl+Shift+Enter),
+    // Alt into Ctrl+Alt+V (Paste Special, or AltGr+V on some layouts), Win into a
+    // shell shortcut. Injecting their key-ups instead is unsafe: a lone Alt-up
+    // activates the target's menu bar and a lone Win-up opens Start, so the
+    // paste waits for the user to release them. This deliberately reverses M-24,
+    // which stopped waiting on Shift and so let Ctrl+Shift+V through.
+    return IsKeyDown(VK_SHIFT) || IsKeyDown(VK_MENU) || IsKeyDown(VK_LWIN) ||
+        IsKeyDown(VK_RWIN);
 }
 
 void PasteController::StartPasteTimer(HWND target, HWND focus) {
@@ -138,29 +143,24 @@ void PasteController::StartPasteTimer(HWND target, HWND focus) {
 void PasteController::OnPasteTimer() {
     const HWND target = m_pendingPasteTarget;
     const HWND focus = m_pendingPasteFocus;
-    const bool timed_out = GetTickCount64() > m_pendingPasteDeadline;
-    if (!::IsWindow(target) || timed_out) {
-        StopPasteTimer();
-        if (!::IsWindow(target)) {
-            return;
-        }
-        // Timed out waiting for Alt — restore focus and force Ctrl+V once (M-13).
-        RestoreTargetFocusAndPaste(target, focus, false);
-        if (IsControlOnlyDown()) {
-            SendPasteWithHeldControl();
-        } else {
-            SendControlVPaste();
-        }
-        return;
-    }
-    if (GetForegroundWindow() != target &&
-        GetAncestor(GetForegroundWindow(), GA_ROOT) != target) {
+    // The user switched windows while we waited: never pull focus back or
+    // paste into whatever is in front now.
+    const HWND foreground = GetForegroundWindow();
+    if (!::IsWindow(target) ||
+        (foreground != target && GetAncestor(foreground, GA_ROOT) != target)) {
         StopPasteTimer();
         return;
     }
     if (!PasteModifiersDown()) {
         StopPasteTimer();
         RestoreTargetFocusAndPaste(target, focus, true);
+        return;
+    }
+    // Still held after the deadline. Forcing Ctrl+V now would send a modified
+    // chord (M-13), so give up; the item is already on the clipboard and the
+    // user can paste it themselves.
+    if (GetTickCount64() > m_pendingPasteDeadline) {
+        StopPasteTimer();
     }
 }
 
