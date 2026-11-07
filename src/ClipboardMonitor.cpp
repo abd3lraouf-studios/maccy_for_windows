@@ -422,12 +422,23 @@ std::optional<ClipboardSnapshot> ClipboardMonitor::CaptureClipboard() const {
     capture.has_text = false;
     capture.has_image = false;
     capture.has_files = false;
-    std::wstring file_preview;
-    std::vector<ClipboardFormatData> ignore_probe;
+    // Decide from the format list alone first. GetClipboardData makes the source
+    // render delayed formats (Excel: Biff12, SYLK, EMF, ...) on this thread while
+    // the clipboard is held open, so only formats that are kept get fetched, and
+    // nothing is fetched for an update that Clipboard Viewer Ignore skips.
+    struct WantedFormat {
+        UINT format = 0;
+        std::wstring name;
+        bool is_text = false;
+        bool is_image = false;
+        bool is_files = false;
+        bool save = false;
+    };
+    std::vector<WantedFormat> wanted;
     const bool has_dib = IsClipboardFormatAvailable(CF_DIB) != FALSE;
     const bool has_dibv5 = IsClipboardFormatAvailable(CF_DIBV5) != FALSE;
     for (UINT format = 0; (format = EnumClipboardFormats(format)) != 0;) {
-        const std::wstring name = ClipboardRules::FormatName(format);
+        std::wstring name = ClipboardRules::FormatName(format);
         if (ShouldIgnoreFormat(format, name)) {
             // Clipboard Viewer Ignore means "skip this entire update" by convention.
             if (ClipboardRules::IsClipboardViewerIgnoreFormat(format, name)) {
@@ -437,19 +448,29 @@ std::optional<ClipboardSnapshot> ClipboardMonitor::CaptureClipboard() const {
             continue;
         }
 
-        const bool is_text = ClipboardRules::IsTextFormat(format, name);
-        const bool is_image = ClipboardRules::IsImageFormat(format, name);
-        const bool is_files = format == CF_HDROP;
-        const bool enabled = (is_text && m_settings.save_text) ||
-            (is_image && m_settings.save_images) ||
-            (is_files && m_settings.save_files);
+        WantedFormat entry;
+        entry.format = format;
+        entry.is_text = ClipboardRules::IsTextFormat(format, name);
+        entry.is_image = ClipboardRules::IsImageFormat(format, name);
+        entry.is_files = format == CF_HDROP;
+        entry.save = ((entry.is_text && m_settings.save_text) ||
+            (entry.is_image && m_settings.save_images) ||
+            (entry.is_files && m_settings.save_files)) &&
+            !IsRedundantBitmapFormat(format, has_dib, has_dibv5);
+        entry.name = std::move(name);
+        // Text is read even when not saved: the ignore rules and the preview
+        // need it (M-25).
+        if (entry.save || entry.is_text) {
+            wanted.push_back(std::move(entry));
+        }
+    }
 
+    std::wstring file_preview;
+    std::vector<ClipboardFormatData> ignore_probe;
+    for (const WantedFormat &entry : wanted) {
         ClipboardFormatData data;
-        if (format == CF_BITMAP) {
-            if (!enabled || IsRedundantBitmapFormat(format, has_dib, has_dibv5)) {
-                continue;
-            }
-            const auto dib = CaptureBitmapAsDib(static_cast<HBITMAP>(GetClipboardData(format)));
+        if (entry.format == CF_BITMAP) {
+            const auto dib = CaptureBitmapAsDib(static_cast<HBITMAP>(GetClipboardData(entry.format)));
             if (!dib.has_value()) {
                 continue;
             }
@@ -457,7 +478,7 @@ std::optional<ClipboardSnapshot> ClipboardMonitor::CaptureClipboard() const {
             data.format = CF_DIB;
             data.bytes = std::move(*dib);
         } else {
-            const HGLOBAL handle = static_cast<HGLOBAL>(GetClipboardData(format));
+            const HGLOBAL handle = static_cast<HGLOBAL>(GetClipboardData(entry.format));
             if (handle == nullptr) {
                 continue;
             }
@@ -470,31 +491,24 @@ std::optional<ClipboardSnapshot> ClipboardMonitor::CaptureClipboard() const {
             if (source == nullptr) {
                 continue;
             }
-            data.name = name;
-            data.format = format;
+            data.name = entry.name;
+            data.format = entry.format;
             data.bytes.assign(source, source + bytes);
+            if (entry.save && entry.is_files) {
+                file_preview = FilesPreview(handle);
+            }
         }
 
-        // Always probe text-like formats for regex ignore, even when save_text is off (M-25).
-        if (is_text || ClipboardRules::IsRichTextFormat(data) ||
-            ClipboardRules::IsUnicodeTextFormat(data) ||
-            ClipboardRules::IsAnsiTextFormat(data)) {
-            ignore_probe.push_back(data);
-        }
-
-        if (!enabled || IsRedundantBitmapFormat(format, has_dib, has_dibv5)) {
+        if (!entry.save) {
+            ignore_probe.push_back(std::move(data));
             continue;
         }
-        if (is_text) {
+        if (entry.is_text) {
+            ignore_probe.push_back(data);
             capture.has_text = true;
         }
-        if (is_image) {
-            capture.has_image = true;
-        }
-        if (is_files) {
-            capture.has_files = true;
-            file_preview = FilesPreview(static_cast<HGLOBAL>(GetClipboardData(format)));
-        }
+        capture.has_image = capture.has_image || entry.is_image;
+        capture.has_files = capture.has_files || entry.is_files;
         capture.data.push_back(std::move(data));
     }
 
