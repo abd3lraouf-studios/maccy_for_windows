@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.6.1](https://github.com/abd3lraouf-studios/maccy_for_windows/compare/v1.6.0...v1.6.1) (2026-11-08)
+
+### Bug Fixes
+
+* **hotkey:** tapping the Windows key on its own no longer stops plain G, Alt+G, Alt+R, Alt+B, Alt+M, Alt+T and Alt+W from reaching any app until the next Win shortcut
+
 ## [1.6.0](https://github.com/abd3lraouf-studios/maccy_for_windows/compare/v1.5.0...v1.6.0) (2026-11-08)
 
 ### Features
