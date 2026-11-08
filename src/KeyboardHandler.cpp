@@ -57,14 +57,17 @@ HWND ForegroundFocusWindow() {
     return foreground;
 }
 
-void ReplayPendingWinDown(const HookState& state, UINT virtual_key) {
-    // Replay the delayed Win-down with original scan/extended flags (H-07).
+void ReplayPendingWin(const HookState& state, UINT virtual_key, bool key_up) {
+    // Replay the delayed Win key with original scan/extended flags (H-07).
     INPUT replay{};
     replay.type = INPUT_KEYBOARD;
     replay.ki.wVk = static_cast<WORD>(virtual_key);
     replay.ki.wScan = static_cast<WORD>(state.pendingWinScan);
     if ((state.pendingWinFlags & LLKHF_EXTENDED) != 0) {
         replay.ki.dwFlags |= KEYEVENTF_EXTENDEDKEY;
+    }
+    if (key_up) {
+        replay.ki.dwFlags |= KEYEVENTF_KEYUP;
     }
     SendInput(1, &replay, sizeof(replay));
 }
@@ -187,11 +190,19 @@ LRESULT CALLBACK OpenHotkeyHookProc(int code, WPARAM message, LPARAM data) {
                 return 1;
             }
             if (state.pendingWinKey == key->vkCode) {
-                ReplayPendingWinDown(state, key->vkCode);
+                // A lone Win tap. Windows records this key-up in its raw key state before
+                // any low-level hook runs, so the Win-down replayed here lands after it and
+                // leaves Win held there. Explorer's Game Bar shortcuts (Win+G, Win+Alt+G/R/B/M/T/W)
+                // read that state, so plain G, Alt+G and the rest stopped typing in every app
+                // until the next Win+key. Close the replayed down once the rest of the chain
+                // has seen the real key-up.
+                ReplayPendingWin(state, key->vkCode, false);
+                const LRESULT result = CallNextHookEx(nullptr, code, message, data);
+                ReplayPendingWin(state, key->vkCode, true);
                 state.pendingWinKey = 0;
                 state.pendingWinScan = 0;
                 state.pendingWinFlags = 0;
-                return CallNextHookEx(nullptr, code, message, data);
+                return result;
             }
             if (state.winKeyPassedThrough) {
                 state.winKeyPassedThrough = false;
@@ -228,7 +239,8 @@ LRESULT CALLBACK OpenHotkeyHookProc(int code, WPARAM message, LPARAM data) {
 
     if (keyDown && state.pendingWinKey != 0) {
         // Let ordinary Win+key shortcuts pass through after replaying the delayed Win-down.
-        ReplayPendingWinDown(state, state.pendingWinKey);
+        // The real Win key-up arrives later and closes it.
+        ReplayPendingWin(state, state.pendingWinKey, false);
         state.pendingWinKey = 0;
         state.pendingWinScan = 0;
         state.pendingWinFlags = 0;
